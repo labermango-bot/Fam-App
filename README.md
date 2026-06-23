@@ -22,7 +22,7 @@ Genau dafür gibt es fünf Bereiche:
 | 📥 **Posteingang** | Schnell-Erfassung. Alles aus WhatsApp/Mail/Elternbrief/Post mit einem Tipp festhalten und später in Termin oder ToDo umwandeln. |
 | 📅 **Kalender** | Monatsansicht, farbig pro Familienmitglied, mit Export in den iOS-Kalender. |
 | ✅ **ToDos** | Aufgaben pro Person, mit Fälligkeit und Priorität. |
-| 👨‍👩‍👧‍👦 **Familie** | Mitglieder & Farben verwalten, Datensicherung. |
+| 👨‍👩‍👧‍👦 **Familie** | Mitglieder & Farben verwalten, Datensicherung, KI & Kalender-Abo. |
 
 ### Die drei Kern-Ideen
 
@@ -69,19 +69,50 @@ Dateien z. B. auf GitHub Pages, Netlify oder einen kleinen Webspace legen.
 Die heruntergeladene `.ics`-Datei in „Dateien“ oder per Mail antippen →
 **„Zum Kalender hinzufügen“**. Erinnerung und Vorbereitungs-Alarme sind enthalten.
 
+## KI-Erkennung aus Foto/Screenshot/Text (optional)
+
+Im **Posteingang** lässt sich ein Foto/Screenshot aufnehmen, eine Bild-Datei
+einfügen (Strg/Cmd+V) oder Text eingeben – die KI erkennt daraus automatisch
+einen **Termin** oder ein **ToDo** und erstellt bei Bedarf direkt passende
+**Vorbereitungs-Schritte** (z. B. aus einer Geburtstagseinladung wird der Termin
+plus „Geschenk besorgen“ als Vorbereitung mit Vorlaufzeit). Vor dem Anlegen gibt
+es immer eine Prüf-/Korrektur-Ansicht.
+
+Dafür wird ein kleiner, eigener Cloudflare-Worker als Backend benötigt (hält den
+Anthropic-API-Key sicher serverseitig – ein **claude.ai-Chat-Abo reicht dafür
+nicht aus**, es braucht einen separaten API-Key von console.anthropic.com).
+Einmalige Einrichtung: siehe [`worker/README.md`](worker/README.md). Danach
+unter **Familie → KI & Kalender-Abo** Worker-URL + Zugangscode eintragen.
+
+## Kalender-Abo für iOS (optional, automatisch aktuell)
+
+Nach Einrichtung desselben Workers gibt es zusätzlich einen Abo-Link
+(`…/feed.ics?token=…`), den du **und deine Frau** je einmal in iOS unter
+**Einstellungen → Kalender → Accounts → Account hinzufügen → Andere →
+Kalenderabo hinzufügen** eintragt. iOS holt sich darüber automatisch (laut
+System-Vorgabe, ca. stündlich) die aktuellen Termine aus FamOrga – ohne
+Apple-ID-Zugangsdaten. Es ist eine **Einbahnstraße** (App → iOS-Kalender) und
+erscheint als **zusätzlicher** Kalender, nicht als Vermischung mit eurem
+bestehenden gemeinsamen Kalender.
+
 ## Was automatisch geht – und was (noch) nicht
 
 Ehrlich eingeordnet, damit keine falschen Erwartungen entstehen:
 
 - ✅ Termine, Vorbereitungen, Erinnerungen, ToDos, Personen-Farben, Kalender-Export,
   Offline-Betrieb, Datensicherung (Export/Import als JSON).
+- ✅ **Optional**: KI-Erkennung aus Foto/Screenshot/Text (inkl. automatischer
+  Vorbereitungs-ToDos) und automatisch aktueller iOS-Kalender-Abo-Link – beides
+  erfordert die einmalige Worker-Einrichtung oben.
 - ⚠️ **WhatsApp und Mail werden nicht automatisch ausgelesen.** Apple/Meta lassen
   das aus Datenschutzgründen für eine reine Geräte-App nicht zu. Der **Posteingang**
-  ist die bewusst einfache Brücke: Text aus WhatsApp/Mail kopieren und einfügen –
-  zwei Sekunden, dann ist es sicher festgehalten.
-- 🔜 Mögliche Ausbaustufen: echtes Mehrgeräte-Sync (z. B. über einen kleinen
-  Server oder eine geteilte Datei), automatische Termin-Erkennung aus eingefügtem
-  Text, Push-Benachrichtigungen.
+  ist die bewusst einfache Brücke: Text aus WhatsApp/Mail kopieren und einfügen,
+  oder einen Screenshot hochladen – dann übernimmt die KI den Rest.
+- ⚠️ Der Kalender-Abo-Link ist nur eine Richtung (App → iOS). Eine echte
+  Zwei-Wege-Synchronisation mit eurem gemeinsamen Kalender wäre über CalDAV
+  möglich, ist aber deutlich komplexer (Apple-App-Passwort nötig) und wurde
+  bewusst nicht umgesetzt.
+- 🔜 Mögliche Ausbaustufen: Push-Benachrichtigungen, echte Zwei-Wege-CalDAV-Sync.
 
 ## Datenschutz
 
@@ -94,8 +125,11 @@ deshalb gibt es unter *Familie → Daten* den Export einer Sicherungsdatei.
 - Reines **Vanilla JavaScript** (ES-Module), **kein** Framework, **kein** Build.
 - `js/store.js` – Datenmodell & Speicherung (localStorage)
 - `js/ics.js` – iCalendar-Export (RFC 5545, inkl. `VALARM`)
+- `js/ai.js` – Anbindung an den Worker für die KI-Erkennung (optional)
+- `js/sync.js` – Spiegelt Termine an den Worker für den Kalender-Abo-Feed (optional)
 - `js/app.js` – Oberfläche & Steuerung
 - `sw.js` + `manifest.webmanifest` – Offline-/Installations-Fähigkeit (PWA)
+- `worker/` – optionaler Cloudflare Worker (KI-Erkennung + Kalender-Abo-Feed), siehe `worker/README.md`
 
 ## Lizenz
 

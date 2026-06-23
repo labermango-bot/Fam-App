@@ -173,6 +173,18 @@ select.input { -webkit-appearance: none; appearance: none; }
 /* Leerzustand */
 .empty { text-align: center; color: var(--muted); padding: 24px 12px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 
+/* KI-Erkennung */
+.ai-item { border: 1.5px solid var(--border); }
+.ai-item .tag { display: inline-block; margin-bottom: 8px; }
+.ai-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0; }
+.spinner {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--tint);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.ai-feed-url { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; color: var(--muted); margin: 6px 0; }
+
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
 .modal {

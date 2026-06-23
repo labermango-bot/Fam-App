@@ -1,6 +1,8 @@
 // app.js — Steuerung und Oberfläche der Familien-App.
 import { store } from "./store.js";
 import { buildICS, downloadICS } from "./ics.js";
+import { classifyCapture, aiConfigured, fileToDataURL } from "./ai.js";
+import { initSync, feedUrl } from "./sync.js";
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -33,6 +35,7 @@ const SOURCE_LABELS = {
   post: "📮 Post",
   other: "📌 Sonstiges",
   manual: "✍️ Manuell",
+  ai: "✨ KI-Erkennung",
 };
 
 const todayISO = () => {
@@ -209,24 +212,53 @@ function statCard(icon, count, label, href) {
 function renderInbox(root) {
   const intro = el("p", { class: "hint" },
     "Alles reinwerfen, was an dich herangetragen wird – aus WhatsApp, Mail, " +
-    "Elternbriefen oder Post. Später in Ruhe in Termin oder ToDo umwandeln.");
+    "Elternbriefen oder Post. Per KI automatisch erkennen lassen oder in Ruhe selbst umwandeln.");
   root.append(intro);
 
   const text = el("textarea", { class: "input", rows: "3", placeholder: "z. B. „Mittwoch Sportzeug für Lea“ oder Text aus WhatsApp einfügen…" });
   const sourceSel = el("select", { class: "input" },
     ...Object.entries(SOURCE_LABELS)
-      .filter(([k]) => k !== "manual")
+      .filter(([k]) => k !== "manual" && k !== "ai")
       .map(([k, v]) => el("option", { value: k }, v)),
   );
-  const addBtn = el("button", { class: "btn primary", onclick: () => {
+  const addBtn = el("button", { class: "btn", onclick: () => {
     const t = text.value.trim();
     if (!t) return;
     store.addInbox(t, sourceSel.value);
     text.value = "";
   }}, "In Posteingang");
 
-  root.append(el("div", { class: "card capture" }, text,
-    el("div", { class: "row gap" }, sourceSel, addBtn)));
+  const fileInput = el("input", {
+    type: "file", accept: "image/*", capture: "environment", style: "display:none",
+    onchange: (ev) => {
+      const file = ev.target.files[0];
+      ev.target.value = "";
+      if (file) runCapture({ file, source: sourceSel.value });
+    },
+  });
+  const photoBtn = el("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, "📷 Foto / Screenshot");
+  const aiBtn = el("button", { class: "btn primary", type: "button", onclick: () => {
+    const t = text.value.trim();
+    if (!t) return;
+    runCapture({ text: t, source: sourceSel.value });
+    text.value = "";
+  }}, "✨ KI: Text erkennen");
+
+  const captureCard = el("div", { class: "card capture" }, text,
+    el("div", { class: "row gap wrap" }, sourceSel, photoBtn, aiBtn, addBtn), fileInput);
+  // Screenshots/Bilder lassen sich auch direkt ins Textfeld einfügen (Strg/Cmd+V).
+  text.addEventListener("paste", (ev) => {
+    const item = [...(ev.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+    if (!item) return;
+    ev.preventDefault();
+    const file = item.getAsFile();
+    if (file) runCapture({ file, source: sourceSel.value });
+  });
+  if (!aiConfigured()) {
+    captureCard.append(el("p", { class: "hint small" },
+      "💡 KI-Erkennung & Foto-Auswertung erst nach Einrichtung unter „Familie → KI & Kalender-Abo“ verfügbar."));
+  }
+  root.append(captureCard);
 
   const items = store.inbox();
   const sec = section("Zu sortieren");
@@ -251,6 +283,146 @@ function renderInbox(root) {
     });
   }
   root.append(sec);
+}
+
+// ---------------------------------------------------------------------------
+// KI-Erkennung: Foto/Screenshot/Text -> Termin- oder ToDo-Vorschlag
+// ---------------------------------------------------------------------------
+async function runCapture({ file, text, source }) {
+  if (!aiConfigured()) {
+    alert("Bitte zuerst unter „Familie → KI & Kalender-Abo“ Worker-URL und Zugangscode eintragen.");
+    return;
+  }
+  const closeLoading = openLoadingModal("KI erkennt Termine/ToDos …");
+  try {
+    const payload = file ? { image: await fileToDataURL(file) } : { text };
+    const items = await classifyCapture(payload);
+    closeLoading();
+    openAIReviewDialog(items, source);
+  } catch (err) {
+    closeLoading();
+    alert(err.message || "KI-Erkennung fehlgeschlagen.");
+  }
+}
+
+function openLoadingModal(message) {
+  openModal("Einen Moment …", el("div", { class: "ai-loading" }, el("div", { class: "spinner" }), el("p", {}, message)));
+  return closeModal;
+}
+
+function openAIReviewDialog(items, source) {
+  if (!items || !items.length) {
+    alert("Die KI konnte hier keinen Termin oder ToDo erkennen. Bitte manuell anlegen.");
+    return;
+  }
+  const body = el("div", { class: "ai-review" },
+    el("p", { class: "hint" }, "KI-Vorschläge prüfen, bei Bedarf korrigieren, dann übernehmen."));
+  let remaining = items.length;
+  items.forEach((item) => {
+    const card = renderAIItemCard(item, source, () => {
+      remaining--;
+      card.remove();
+      if (remaining <= 0) closeModal();
+    });
+    body.append(card);
+  });
+  openModal("KI-Vorschläge", body);
+}
+
+function renderAIItemCard(item, source, onResolved) {
+  const isEvent = item.kind !== "todo";
+  const title = el("input", { class: "input", value: item.title || "" });
+  const notes = el("textarea", { class: "input", rows: "2" }, item.notes || "");
+
+  let card;
+  if (isEvent) {
+    const date = el("input", { class: "input", type: "date", value: item.date || todayISO() });
+    const time = el("input", { class: "input", type: "time", value: item.time || "" });
+    const endTime = el("input", { class: "input", type: "time", value: item.endTime || "" });
+    const location = el("input", { class: "input", value: item.location || "" });
+    const reminder = el("select", { class: "input" },
+      ...[[0,"zur Startzeit"],[15,"15 Min vorher"],[30,"30 Min vorher"],[60,"1 Std vorher"],[120,"2 Std vorher"],[1440,"1 Tag vorher"]]
+        .map(([v,l]) => el("option", { value: v, selected: (item.reminderLeadMinutes ?? 60) === v }, l)));
+
+    const memberWrap = el("div", { class: "chip-row" });
+    const selected = new Set();
+    store.members().forEach((m) => {
+      const chip = el("button", { type: "button", class: "chip", style: `border-color:${m.color}` }, m.name);
+      chip.onclick = () => {
+        if (selected.has(m.id)) { selected.delete(m.id); chip.classList.remove("active"); chip.style.cssText = `border-color:${m.color}`; }
+        else { selected.add(m.id); chip.classList.add("active"); chip.style.cssText = `background:${m.color};border-color:${m.color};color:#fff`; }
+      };
+      memberWrap.append(chip);
+    });
+
+    const prepItems = (item.prepTodos || []).map((p) => ({ id: store.uid(), text: p.title || "", done: false, leadDays: p.leadDays || 0 }));
+    const prepList = el("div", { class: "prep-edit" });
+    function renderPrep() {
+      prepList.innerHTML = "";
+      prepItems.forEach((p, idx) => {
+        prepList.append(el("div", { class: "row gap center" },
+          el("input", { class: "input flex", value: p.text, oninput: (ev) => p.text = ev.target.value }),
+          el("select", { class: "input narrow", onchange: (ev) => p.leadDays = Number(ev.target.value) },
+            ...[[0,"am Tag"],[1,"1 Tag vor"],[2,"2 Tage vor"],[3,"3 Tage vor"],[7,"1 Woche vor"]]
+              .map(([v,l]) => el("option", { value: v, selected: (p.leadDays||0) === v }, l))),
+          el("button", { class: "icon-btn ghost", type: "button", onclick: () => { prepItems.splice(idx,1); renderPrep(); } }, "✕"),
+        ));
+      });
+    }
+    renderPrep();
+    const addPrepBtn = el("button", { class: "btn small", type: "button", onclick: () => { prepItems.push({ id: store.uid(), text: "", done: false, leadDays: 0 }); renderPrep(); } }, "+ Vorbereitungs-Schritt");
+
+    card = el("div", { class: "card ai-item" },
+      el("span", { class: "tag" }, "📅 Termin-Vorschlag"),
+      field("Titel", title),
+      el("div", { class: "row gap" }, field("Datum", date), field("Uhrzeit", time)),
+      el("div", { class: "row gap" }, field("Ende (optional)", endTime), field("Erinnerung", reminder)),
+      field("Ort", location),
+      field("Für wen?", memberWrap),
+      field("Vorbereiten", el("div", {}, prepList, addPrepBtn)),
+      field("Notizen", notes),
+      el("div", { class: "row gap" },
+        el("button", { class: "btn primary small", onclick: () => {
+          if (!title.value.trim()) { title.focus(); return; }
+          store.addEvent({
+            title: title.value.trim(), date: date.value, time: time.value, endTime: endTime.value,
+            location: location.value.trim(), notes: notes.value.trim(),
+            memberIds: [...selected], prep: prepItems.filter((p) => p.text.trim()),
+            reminderLeadMinutes: Number(reminder.value), source: source || "ai",
+          });
+          onResolved();
+        }}, "✓ Termin anlegen"),
+        el("button", { class: "btn small ghost", onclick: onResolved }, "Verwerfen"),
+      ),
+    );
+  } else {
+    const due = el("input", { class: "input", type: "date", value: item.due || "" });
+    const memberSel = el("select", { class: "input" },
+      el("option", { value: "" }, "— niemand zugeordnet —"),
+      ...store.members().map((m) => el("option", { value: m.id }, m.name)));
+    const prio = el("select", { class: "input" },
+      ...[["low","Niedrig"],["normal","Normal"],["high","Hoch 🔴"]].map(([v,l]) => el("option", { value: v, selected: (item.priority || "normal") === v }, l)));
+
+    card = el("div", { class: "card ai-item" },
+      el("span", { class: "tag" }, "✅ ToDo-Vorschlag"),
+      field("Aufgabe", title),
+      el("div", { class: "row gap" }, field("Für wen?", memberSel), field("Priorität", prio)),
+      field("Fällig am", due),
+      field("Notizen", notes),
+      el("div", { class: "row gap" },
+        el("button", { class: "btn primary small", onclick: () => {
+          if (!title.value.trim()) { title.focus(); return; }
+          store.addTodo({
+            title: title.value.trim(), memberId: memberSel.value || null, due: due.value,
+            priority: prio.value, notes: notes.value.trim(), source: source || "ai",
+          });
+          onResolved();
+        }}, "✓ ToDo anlegen"),
+        el("button", { class: "btn small ghost", onclick: onResolved }, "Verwerfen"),
+      ),
+    );
+  }
+  return card;
 }
 
 function convertInbox(item, type) {
@@ -443,11 +615,52 @@ function renderFamily(root) {
   );
   root.append(tools);
 
+  root.append(renderAISettings());
+
   const about = el("div", { class: "card muted small" },
     el("p", {}, "FamOrga speichert alle Daten nur lokal auf diesem Gerät – keine Cloud, keine Anmeldung."),
     el("p", {}, "Tipp: Über das Teilen-Symbol in Safari „Zum Home-Bildschirm“ wählen, dann startet die App wie eine normale iPhone-App."),
   );
   root.append(about);
+}
+
+function renderAISettings() {
+  const meta = store.get().meta || {};
+  const sec = section("KI & Kalender-Abo");
+  sec.append(el("p", { class: "hint" },
+    "Optional: eigener Worker für Foto/Text-Erkennung per KI und einen " +
+    "automatisch aktualisierten Kalender-Abo-Link für iOS. Einrichtung siehe worker/README.md im Projekt."));
+
+  const urlInput = el("input", { class: "input", placeholder: "https://famorga-api.dein-name.workers.dev", value: meta.workerUrl || "" });
+  const tokenInput = el("input", { class: "input", placeholder: "Zugangscode (von dir frei gewählt)", value: meta.syncToken || "" });
+  const saveBtn = el("button", { class: "btn", onclick: () => {
+    store.setMeta({ workerUrl: urlInput.value.trim(), syncToken: tokenInput.value.trim() });
+    renderFeedLink();
+  }}, "Speichern");
+
+  sec.append(el("div", { class: "card" }, field("Worker-URL", urlInput), field("Zugangscode", tokenInput), saveBtn));
+
+  const feedBox = el("div", {});
+  function renderFeedLink() {
+    feedBox.innerHTML = "";
+    const url = feedUrl();
+    if (!url) {
+      feedBox.append(el("p", { class: "muted small" }, "Noch keine Worker-URL/Zugangscode hinterlegt — kein Abo-Link verfügbar."));
+      return;
+    }
+    feedBox.append(
+      el("div", { class: "card" },
+        el("p", { class: "field-label" }, "Kalender-Abo-Link (für dich und deine Frau, je einmal in iOS hinzufügen):"),
+        el("p", { class: "ai-feed-url" }, url),
+        el("button", { class: "btn small", onclick: () => {
+          navigator.clipboard?.writeText(url).then(() => alert("Link kopiert. In iOS: Einstellungen → Kalender → Accounts → Account hinzufügen → Andere → Kalenderabo hinzufügen."));
+        }}, "📋 Link kopieren"),
+      )
+    );
+  }
+  renderFeedLink();
+  sec.append(feedBox);
+  return sec;
 }
 
 // ---------------------------------------------------------------------------
@@ -711,4 +924,5 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+initSync();
 render();
