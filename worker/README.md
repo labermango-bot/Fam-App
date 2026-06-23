@@ -5,30 +5,32 @@ Backend zur App. Er macht zwei Dinge, die eine rein lokale App nicht
 sicher selbst kann:
 
 1. **KI-Erkennung** (`/classify`): nimmt Foto/Screenshot/Text entgegen und
-   lässt Claude (Anthropic) daraus Termine/ToDos extrahieren. Der
-   Anthropic-API-Key liegt nur hier auf dem Server, nie im Browser.
+   lässt Google Gemini daraus Termine/ToDos extrahieren. Der Gemini-API-Key
+   liegt nur hier auf dem Server, nie im Browser.
 2. **Kalender-Abo** (`/sync` + `/feed.ics`): spiegelt eure Termine in einen
    kleinen Speicher (Cloudflare KV), damit iOS sie als automatisch
    aktualisiertes Abo-Kalender abonnieren kann.
 
-Kostenlos im Rahmen des Cloudflare-Free-Tiers (100.000 Requests/Tag) – für
-eine Familie bei weitem ausreichend. Die Anthropic-API-Nutzung wird separat
-nach Verbrauch abgerechnet (siehe unten).
+Beides läuft im kostenlosen Rahmen: Cloudflare-Free-Tier (100.000
+Requests/Tag) und Googles kostenloses Gemini-Kontingent (Stand heute z. B.
+Gemini 2.0 Flash mit großzügigem Tageslimit) – für eine Familie bei weitem
+ausreichend, ohne Kreditkarte oder Zahlungsdaten.
 
-## Wichtig: „Claude-Abo" reicht hier nicht aus
+## Kostenlosen Gemini-API-Key erstellen
 
-Ein **claude.ai-Abo (Pro/Max)** ist ein Chat-Abo für die Claude-Webseite/App
-und kann technisch **nicht** von einem eigenen Programm aus angesprochen
-werden. Für die Anbindung an dieses Programm braucht man einen **separaten
-API-Key** von [console.anthropic.com](https://console.anthropic.com) – das
-ist ein anderes Konto/Produkt als claude.ai, mit eigener (meist sehr
-günstiger) Abrechnung nach Nutzung (ein paar Cent pro Foto-Erkennung).
+Ein **API-Key** ist hier nötig (kein "Abo", keine Zahlungsdaten) – einfach
+ein kostenloser Zugangsschlüssel für Googles KI:
 
-Schritte:
-1. Konto auf [console.anthropic.com](https://console.anthropic.com) anlegen.
-2. Unter „API Keys" einen neuen Key erstellen, etwas Guthaben aufladen
-   (ein paar Euro reichen für sehr lange).
+1. [aistudio.google.com/apikey](https://aistudio.google.com/apikey) öffnen,
+   mit Google-Konto anmelden.
+2. „Create API key" klicken, Key kopieren.
 3. Den Key gleich unten bei „Secrets setzen" verwenden.
+
+Wichtig zur Sicherheit: Dieser Key wird **nie** in eine Datei im Repo
+geschrieben, auch nicht in `wrangler.toml`. Der Befehl `wrangler secret put`
+lädt ihn direkt verschlüsselt zu Cloudflare hoch – im (öffentlichen!)
+GitHub-Repo steht nur der Worker-*Code*, der den Key zur Laufzeit aus einer
+Umgebungsvariable liest, niemals der Key selbst.
 
 ## Einmalige Einrichtung
 
@@ -44,8 +46,8 @@ wrangler kv namespace create FAMORGA_KV
 # -> gibt eine "id" aus, die in wrangler.toml bei [[kv_namespaces]] eingetragen werden muss
 
 # Secrets setzen (werden verschlüsselt bei Cloudflare gespeichert, NIE im Code):
-wrangler secret put ANTHROPIC_API_KEY
-# -> Anthropic API-Key von console.anthropic.com einfügen
+wrangler secret put GEMINI_API_KEY
+# -> kostenlosen Gemini-API-Key von aistudio.google.com/apikey einfügen
 
 wrangler secret put SYNC_TOKEN
 # -> einen frei erfundenen, langen Code eingeben, z. B. 32 zufällige Zeichen.

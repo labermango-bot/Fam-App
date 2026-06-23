@@ -2,10 +2,10 @@ name = "famorga-api"
 main = "index.js"
 compatibility_date = "2024-11-01"
 
-# Modell für die KI-Erkennung (Vision-fähig). Kann ohne Code-Änderung
-# angepasst werden, z. B. auf ein günstigeres oder neueres Modell.
+# Modell für die KI-Erkennung (Vision-fähig, Google Gemini kostenloses
+# Kontingent). Kann ohne Code-Änderung angepasst werden.
 [vars]
-ANTHROPIC_MODEL = "claude-sonnet-4-6"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 # KV-Namespace zum Spiegeln der Termine für den .ics-Kalender-Feed.
 # Erst anlegen mit: npx wrangler kv namespace create FAMORGA_KV

@@ -78,11 +78,11 @@ einen **Termin** oder ein **ToDo** und erstellt bei Bedarf direkt passende
 plus „Geschenk besorgen“ als Vorbereitung mit Vorlaufzeit). Vor dem Anlegen gibt
 es immer eine Prüf-/Korrektur-Ansicht.
 
-Dafür wird ein kleiner, eigener Cloudflare-Worker als Backend benötigt (hält den
-Anthropic-API-Key sicher serverseitig – ein **claude.ai-Chat-Abo reicht dafür
-nicht aus**, es braucht einen separaten API-Key von console.anthropic.com).
-Einmalige Einrichtung: siehe [`worker/README.md`](worker/README.md). Danach
-unter **Familie → KI & Kalender-Abo** Worker-URL + Zugangscode eintragen.
+Dafür wird ein kleiner, eigener Cloudflare-Worker als Backend benötigt (hält
+einen **kostenlosen** Google-Gemini-API-Key sicher serverseitig – kein
+Zahlungsmittel nötig, nur ein Google-Konto). Einmalige Einrichtung: siehe
+[`worker/README.md`](worker/README.md). Danach unter **Familie → KI &
+Kalender-Abo** Worker-URL + Zugangscode eintragen.
 
 ## Kalender-Abo für iOS (optional, automatisch aktuell)
 

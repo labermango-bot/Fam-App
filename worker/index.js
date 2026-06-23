@@ -62,7 +62,7 @@ export default {
 // ---------------------------------------------------------------------------
 async function handleClassify(req, env) {
   if (!checkToken(req, env)) return json({ error: "Ungültiger Zugangscode." }, 401);
-  if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY ist auf dem Worker nicht gesetzt." }, 500);
+  if (!env.GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY ist auf dem Worker nicht gesetzt." }, 500);
 
   const body = await req.json();
   const { image, mediaType, text } = body || {};
@@ -90,41 +90,36 @@ Format:
 ]}
 Wenn im Inhalt mehrere Termine/ToDos stehen, gib mehrere items zurück. Wenn nichts Sinnvolles erkennbar ist, gib {"items":[]} zurück.`;
 
-  const userContent = [];
+  const parts = [];
   if (image) {
-    userContent.push({
-      type: "image",
-      source: { type: "base64", media_type: mediaType || "image/jpeg", data: image },
-    });
+    parts.push({ inline_data: { mime_type: mediaType || "image/jpeg", data: image } });
   }
-  userContent.push({
-    type: "text",
+  parts.push({
     text: text
       ? `Text:\n${text}`
       : "Erkenne Termine/ToDos in diesem Bild (Einladung, Elternbrief, Screenshot o.ä.).",
   });
 
-  const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
-      max_tokens: 1500,
-      system,
-      messages: [{ role: "user", content: userContent }],
-    }),
-  });
+  const model = env.GEMINI_MODEL || "gemini-2.0-flash";
+  const aiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts }],
+        generationConfig: { responseMimeType: "application/json" },
+      }),
+    }
+  );
 
   if (!aiRes.ok) {
     const errText = await aiRes.text();
-    return json({ error: `Anthropic API Fehler: ${errText}` }, 502);
+    return json({ error: `Gemini API Fehler: ${errText}` }, 502);
   }
   const aiJson = await aiRes.json();
-  const raw = (aiJson.content || []).map((b) => b.text || "").join("").trim();
+  const raw = (aiJson.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
   const parsed = extractJSON(raw);
   if (!parsed || !Array.isArray(parsed.items)) {
     return json({ error: "KI-Antwort konnte nicht ausgewertet werden.", raw }, 502);
