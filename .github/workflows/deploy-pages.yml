@@ -1,0 +1,45 @@
+name: Deploy to GitHub Pages
+
+# Veröffentlicht die statische App auf GitHub Pages.
+# Läuft beim Push auf den Standard-Branch und kann manuell gestartet werden.
+on:
+  push:
+    branches: ["claude/family-organization-app-64c8e7"]
+  workflow_dispatch:
+
+# Berechtigungen, die der Deploy benötigt.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Es soll immer nur ein Pages-Deployment gleichzeitig laufen.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Aktiviert GitHub Pages (Build-Quelle: GitHub Actions), falls noch nicht aktiv.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      # Packt das komplette Repo-Verzeichnis als Pages-Artefakt (kein Build nötig).
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
