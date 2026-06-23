@@ -1,0 +1,15 @@
+{
+  "name": "FamOrga – Familienorganisation",
+  "short_name": "FamOrga",
+  "description": "Termine, Vorbereitungen, Erinnerungen und ToDos für die ganze Familie an einem Ort.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f2f7",
+  "theme_color": "#0a84ff",
+  "lang": "de",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
