@@ -224,8 +224,11 @@ function renderInbox(root) {
     text.value = "";
   }}, "In Posteingang");
 
+  // Ohne "capture" zeigt iOS beim Antippen die Auswahl Fotomediathek /
+  // Foto aufnehmen / Datei – so lassen sich auch vorhandene Screenshots
+  // anhängen (mit capture="environment" ginge nur die Live-Kamera).
   const fileInput = el("input", {
-    type: "file", accept: "image/*", capture: "environment", style: "display:none",
+    type: "file", accept: "image/*", style: "display:none",
     onchange: (ev) => {
       const file = ev.target.files[0];
       ev.target.value = "";
