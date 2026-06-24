@@ -296,15 +296,20 @@ export const store = {
   // der hinzugefügten Artikel zurück.
   addShopping(text, shop = null) {
     const mem = (state.meta.shopMemory = state.meta.shopMemory || {});
+    const catMem = (state.meta.catMemory = state.meta.catMemory || {});
     const items = String(text || "")
       .split(/[\n,;]+/)
       .map((s) => s.replace(/^[\s\-*•·–]+/, "").trim()) // Aufzählungszeichen entfernen
       .filter(Boolean);
     items.forEach((t) => {
+      const key = t.toLowerCase();
       // Markt: explizit übergeben, sonst gemerkter Markt für diesen Artikel.
-      const resolved = shop || mem[t.toLowerCase()] || "";
-      if (shop) mem[t.toLowerCase()] = shop;
-      state.shopping.push({ id: uid(), text: t, done: false, shop: resolved, createdAt: new Date().toISOString() });
+      const resolved = shop || mem[key] || "";
+      if (shop) mem[key] = shop;
+      // Kategorie-Override: nur gemerkte manuelle Zuordnung (sonst leer ->
+      // automatische Stichwort-Erkennung in der Oberfläche).
+      const category = catMem[key] || "";
+      state.shopping.push({ id: uid(), text: t, done: false, shop: resolved, category, createdAt: new Date().toISOString() });
     });
     if (items.length) persist();
     return items.length;
@@ -321,6 +326,16 @@ export const store = {
     const mem = (state.meta.shopMemory = state.meta.shopMemory || {});
     if (shop) mem[i.text.toLowerCase()] = shop;
     else delete mem[i.text.toLowerCase()];
+    persist();
+  },
+  // Kategorie eines Artikels manuell überschreiben und merken.
+  setShoppingCategory(id, category) {
+    const i = state.shopping.find((x) => x.id === id);
+    if (!i) return;
+    i.category = category || "";
+    const catMem = (state.meta.catMemory = state.meta.catMemory || {});
+    if (category) catMem[i.text.toLowerCase()] = category;
+    else delete catMem[i.text.toLowerCase()];
     persist();
   },
   removeShopping(id) {

@@ -184,6 +184,30 @@ function upcomingBirthdays(fromISO, withinDays) {
     .sort((a, z) => a.iso.localeCompare(z.iso));
 }
 
+// Legt aus einem Geburtstag ein „Geschenk besorgen"-ToDo an, fällig eine
+// Woche vor dem nächsten Geburtstag (keine Doppelten anlegen).
+function addGiftTodo(b, occIso) {
+  const d = parseISO(occIso);
+  d.setDate(d.getDate() - 7);
+  const due = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const title = `Geschenk für ${b.name}`;
+  if (store.todos().some((t) => t.title === title && t.due === due && !t.done)) {
+    toast("Geschenk-ToDo gibt es schon");
+    return;
+  }
+  store.addTodo({ title, due, memberId: b.memberId || null, priority: "normal", source: "manual" });
+  toast(`„${title}" angelegt (fällig ${relativeDay(due)})`);
+}
+
+// Liefert die IDs der Familienmitglieder, deren Name als ganzes Wort im Text
+// vorkommt — für die automatische Vorauswahl bei KI-Vorschlägen.
+function membersMentioned(text) {
+  const tokens = new Set(String(text || "").toLowerCase().split(/[^a-zäöüß0-9]+/).filter(Boolean));
+  return store.members()
+    .filter((m) => { const n = m.name.trim().toLowerCase(); return n.length >= 2 && tokens.has(n); })
+    .map((m) => m.id);
+}
+
 // ---------------------------------------------------------------------------
 // Routing
 // ---------------------------------------------------------------------------
@@ -254,11 +278,17 @@ function renderHeader(tab) {
 }
 
 function renderTabBar(active) {
+  const counts = {
+    inbox: store.inbox().filter((i) => !i.processed).length,
+    todos: store.todos().filter((t) => !t.done).length,
+  };
   const bar = el("nav", { class: "tabbar" });
   TABS.forEach((t) => {
+    const n = counts[t.id] || 0;
     bar.append(
       el("a", { href: "#" + t.id, class: "tab" + (t.id === active ? " active" : "") },
-        el("span", { class: "tab-icon" }, t.icon),
+        el("span", { class: "tab-icon" }, t.icon,
+          n ? el("span", { class: "tab-badge" }, n > 99 ? "99+" : String(n)) : null),
         el("span", { class: "tab-label" }, t.label),
       )
     );
@@ -540,6 +570,11 @@ function renderInbox(root) {
           el("div", { class: "row gap wrap" },
             el("button", { class: "btn small primary", onclick: () => convertInbox(item, "event") }, "→ Termin"),
             el("button", { class: "btn small", onclick: () => convertInbox(item, "todo") }, "→ ToDo"),
+            el("button", { class: "btn small", onclick: () => {
+              const n = store.addShopping(item.text);
+              store.removeInbox(item.id);
+              if (n > 1) toast(`${n} Artikel auf die Einkaufsliste`);
+            } }, "→ Einkauf"),
             el("button", { class: "btn small ghost", onclick: () => store.removeInbox(item.id) }, "Verwerfen"),
           ),
         )
@@ -597,6 +632,8 @@ function renderAIItemCard(item, source, onResolved) {
   const isEvent = item.kind !== "todo";
   const title = el("input", { class: "input", value: item.title || "" });
   const notes = el("textarea", { class: "input", rows: "2" }, item.notes || "");
+  // Im Text erwähnte Personen automatisch vorschlagen.
+  const mentioned = membersMentioned(`${item.title || ""} ${item.notes || ""}`);
 
   let card;
   if (isEvent) {
@@ -609,9 +646,13 @@ function renderAIItemCard(item, source, onResolved) {
         .map(([v,l]) => el("option", { value: v, selected: (item.reminderLeadMinutes ?? 60) === v }, l)));
 
     const memberWrap = el("div", { class: "chip-row" });
-    const selected = new Set();
+    const selected = new Set(mentioned);
     store.members().forEach((m) => {
-      const chip = el("button", { type: "button", class: "chip", style: `border-color:${m.color}` }, m.name);
+      const on = selected.has(m.id);
+      const chip = el("button", { type: "button",
+        class: "chip" + (on ? " active" : ""),
+        style: on ? `background:${m.color};border-color:${m.color};color:#fff` : `border-color:${m.color}`,
+      }, m.name);
       chip.onclick = () => {
         if (selected.has(m.id)) { selected.delete(m.id); chip.classList.remove("active"); chip.style.cssText = `border-color:${m.color}`; }
         else { selected.add(m.id); chip.classList.add("active"); chip.style.cssText = `background:${m.color};border-color:${m.color};color:#fff`; }
@@ -661,9 +702,10 @@ function renderAIItemCard(item, source, onResolved) {
     );
   } else {
     const due = el("input", { class: "input", type: "date", value: item.due || "" });
+    const suggested = mentioned[0] || "";
     const memberSel = el("select", { class: "input" },
-      el("option", { value: "" }, "— niemand zugeordnet —"),
-      ...store.members().map((m) => el("option", { value: m.id }, m.name)));
+      el("option", { value: "", selected: !suggested }, "— niemand zugeordnet —"),
+      ...store.members().map((m) => el("option", { value: m.id, selected: m.id === suggested }, m.name)));
     const prio = el("select", { class: "input" },
       ...[["low","Niedrig"],["normal","Normal"],["high","Hoch 🔴"]].map(([v,l]) => el("option", { value: v, selected: (item.priority || "normal") === v }, l)));
 
@@ -829,15 +871,17 @@ function renderCalendar(root) {
       const age = birthdayAgeAt(b, iso);
       const m = b.memberId ? store.member(b.memberId) : null;
       bSec.append(
-        el("div", { class: "list-row", onclick: () => openBirthdayDialog(b) },
+        el("div", { class: "list-row" },
           el("span", { class: "cal-bday-lg" }, "🎂"),
-          el("div", { class: "list-main" },
+          el("div", { class: "list-main", onclick: () => openBirthdayDialog(b) },
             el("div", { class: "list-title" }, b.name + (age != null ? ` (wird ${age})` : "")),
             el("div", { class: "list-sub muted" },
               `${fmtDate(iso)} · ${relativeDay(iso)}`,
               m ? el("span", { class: "person-pill", style: `background:${m.color}` }, m.name) : null,
             ),
           ),
+          el("button", { class: "icon-btn ghost", title: "Geschenk-ToDo (1 Woche vorher)",
+            onclick: (ev) => { ev.stopPropagation(); addGiftTodo(b, iso); } }, "🎁"),
         )
       );
     });
@@ -961,11 +1005,29 @@ function openShopChooser(i) {
   openModal(`„${i.text}" – wo kaufen?`, body);
 }
 
-function shopItemRow(i) {
+// Effektive Kategorie: manuelle Überschreibung, sonst automatische Erkennung.
+function effectiveCategory(item) {
+  return item.category || categorize(item.text);
+}
+
+function openShopCatChooser(i) {
+  const body = el("div", { class: "chip-row" },
+    ...CATEGORIES.filter((c) => c.id !== "sonstiges").map((c) => el("button", {
+      class: "chip", onclick: () => { store.setShoppingCategory(i.id, c.id); closeModal(); },
+    }, c.label)),
+    el("button", { class: "chip", onclick: () => { store.setShoppingCategory(i.id, ""); closeModal(); } }, "🔄 Automatisch"),
+  );
+  openModal(`„${i.text}" – Kategorie`, body);
+}
+
+function shopItemRow(i, showCat) {
   return el("label", { class: "list-row shop-item" + (i.done ? " done" : "") },
     el("input", { type: "checkbox", checked: i.done, onchange: () => store.toggleShopping(i.id) }),
     el("div", { class: "list-main" }, el("div", { class: "list-title" }, i.text)),
-    storeTagButton(i),
+    showCat
+      ? el("button", { class: "store-tag-btn", title: "Kategorie ändern",
+          onclick: (ev) => { ev.preventDefault(); openShopCatChooser(i); } }, "🗂")
+      : storeTagButton(i),
     el("button", { class: "icon-btn ghost", onclick: (ev) => { ev.preventDefault(); store.removeShopping(i.id); } }, "🗑"),
   );
 }
@@ -1029,10 +1091,10 @@ function renderShopping(root) {
   if (groupBy === "category") {
     // Offene Artikel nach Warenkategorie gruppieren (in Laufreihenfolge).
     CATEGORIES.forEach((cat) => {
-      const groupItems = openItems.filter((i) => categorize(i.text) === cat.id);
+      const groupItems = openItems.filter((i) => effectiveCategory(i) === cat.id);
       if (!groupItems.length) return;
       sec.append(el("div", { class: "shop-group-head" }, el("span", {}, cat.label)));
-      groupItems.forEach((i) => sec.append(shopItemRow(i)));
+      groupItems.forEach((i) => sec.append(shopItemRow(i, true)));
     });
   } else {
     // Offene Artikel nach Markt gruppieren (bekannte Märkte zuerst, dann ohne).
@@ -1261,6 +1323,17 @@ function closeModal() {
 
 function field(labelText, inputNode) {
   return el("label", { class: "field" }, el("span", { class: "field-label" }, labelText), inputNode);
+}
+
+// Kurze, nicht-blockierende Rückmeldung (verschwindet von selbst).
+let toastTimer = null;
+function toast(message) {
+  let t = $("#toast");
+  if (!t) { t = el("div", { id: "toast", class: "toast" }); document.body.append(t); }
+  t.textContent = message;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
 // ---------------------------------------------------------------------------

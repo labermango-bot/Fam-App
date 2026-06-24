@@ -186,7 +186,23 @@ input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--tint); fle
 }
 .tab { text-decoration: none; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; font-weight: 600; }
 .tab.active { color: var(--tint); }
-.tab-icon { font-size: 22px; }
+.tab-icon { font-size: 22px; position: relative; }
+.tab-badge {
+  position: absolute; top: -4px; left: 60%;
+  min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  background: var(--danger); color: #fff; font-size: 10px; font-weight: 700;
+  line-height: 16px; text-align: center; border-radius: 8px;
+}
+
+/* Toast (kurze Rückmeldung) */
+.toast {
+  position: fixed; left: 50%; bottom: calc(80px + var(--safe-bottom));
+  transform: translateX(-50%) translateY(20px);
+  background: #1c1c1eee; color: #fff; padding: 10px 16px; border-radius: 12px;
+  font-size: 14px; font-weight: 600; z-index: 60; max-width: 80%; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* Formularfelder */
 .field { display: block; margin-bottom: 12px; }
