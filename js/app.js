@@ -217,15 +217,10 @@ function renderInbox(root) {
   root.append(intro);
 
   const text = el("textarea", { class: "input", rows: "3", placeholder: "z. B. „Mittwoch Sportzeug für Lea“ oder Text aus WhatsApp einfügen…" });
-  const sourceSel = el("select", { class: "input" },
-    ...Object.entries(SOURCE_LABELS)
-      .filter(([k]) => k !== "manual" && k !== "ai" && k !== "prep")
-      .map(([k, v]) => el("option", { value: k }, v)),
-  );
   const addBtn = el("button", { class: "btn", onclick: () => {
     const t = text.value.trim();
     if (!t) return;
-    store.addInbox(t, sourceSel.value);
+    store.addInbox(t, "other");
     text.value = "";
   }}, "In Posteingang");
 
@@ -234,26 +229,26 @@ function renderInbox(root) {
     onchange: (ev) => {
       const file = ev.target.files[0];
       ev.target.value = "";
-      if (file) runCapture({ file, source: sourceSel.value });
+      if (file) runCapture({ file, source: "other" });
     },
   });
   const photoBtn = el("button", { class: "btn primary", type: "button", onclick: () => fileInput.click() }, "✨📷 Foto/Screenshot → KI");
   const aiBtn = el("button", { class: "btn primary", type: "button", onclick: () => {
     const t = text.value.trim();
     if (!t) return;
-    runCapture({ text: t, source: sourceSel.value });
+    runCapture({ text: t, source: "other" });
     text.value = "";
   }}, "✨ KI: Text erkennen");
 
   const captureCard = el("div", { class: "card capture" }, text,
-    el("div", { class: "row gap wrap" }, sourceSel, photoBtn, aiBtn, addBtn), fileInput);
+    el("div", { class: "row gap wrap" }, photoBtn, aiBtn, addBtn), fileInput);
   // Screenshots/Bilder lassen sich auch direkt ins Textfeld einfügen (Strg/Cmd+V).
   text.addEventListener("paste", (ev) => {
     const item = [...(ev.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
     if (!item) return;
     ev.preventDefault();
     const file = item.getAsFile();
-    if (file) runCapture({ file, source: sourceSel.value });
+    if (file) runCapture({ file, source: "other" });
   });
   if (!aiConfigured()) {
     captureCard.append(el("p", { class: "hint small" },
@@ -930,6 +925,24 @@ function restoreRecovery() {
 }
 
 // ---------------------------------------------------------------------------
+// Geteilter Text (z. B. über einen iOS-Kurzbefehl aus dem Teilen-Menü von
+// WhatsApp/Mail) — kommt als ?text=… in der URL an. Direkt analysieren statt
+// nur in den Posteingang zu legen, damit "Teilen -> fertig" reicht.
+// ---------------------------------------------------------------------------
+function handleSharedText() {
+  const params = new URLSearchParams(location.search);
+  const shared = params.get("text");
+  if (!shared || !shared.trim()) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  location.hash = "#inbox";
+  if (aiConfigured()) {
+    runCapture({ text: shared.trim(), source: "whatsapp" });
+  } else {
+    store.addInbox(shared.trim(), "whatsapp");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Service Worker (Offline-Fähigkeit)
 // ---------------------------------------------------------------------------
 if ("serviceWorker" in navigator) {
@@ -940,3 +953,4 @@ if ("serviceWorker" in navigator) {
 
 initSync();
 render();
+handleSharedText();
