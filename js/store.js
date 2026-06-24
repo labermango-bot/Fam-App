@@ -292,18 +292,34 @@ export const store = {
   // Nimmt einen Text (z. B. aus WhatsApp) und legt pro Zeile / pro durch
   // Komma getrenntem Eintrag einen abhakbaren Artikel an. Gibt die Anzahl
   // der hinzugefügten Artikel zurück.
-  addShopping(text) {
+  addShopping(text, shop = null) {
+    const mem = (state.meta.shopMemory = state.meta.shopMemory || {});
     const items = String(text || "")
       .split(/[\n,;]+/)
       .map((s) => s.replace(/^[\s\-*•·–]+/, "").trim()) // Aufzählungszeichen entfernen
       .filter(Boolean);
-    items.forEach((t) => state.shopping.push({ id: uid(), text: t, done: false, createdAt: new Date().toISOString() }));
+    items.forEach((t) => {
+      // Markt: explizit übergeben, sonst gemerkter Markt für diesen Artikel.
+      const resolved = shop || mem[t.toLowerCase()] || "";
+      if (shop) mem[t.toLowerCase()] = shop;
+      state.shopping.push({ id: uid(), text: t, done: false, shop: resolved, createdAt: new Date().toISOString() });
+    });
     if (items.length) persist();
     return items.length;
   },
   toggleShopping(id) {
     const i = state.shopping.find((x) => x.id === id);
     if (i) { i.done = !i.done; persist(); }
+  },
+  // Markt eines Artikels setzen und die Zuordnung merken (für nächstes Mal).
+  setShoppingShop(id, shop) {
+    const i = state.shopping.find((x) => x.id === id);
+    if (!i) return;
+    i.shop = shop || "";
+    const mem = (state.meta.shopMemory = state.meta.shopMemory || {});
+    if (shop) mem[i.text.toLowerCase()] = shop;
+    else delete mem[i.text.toLowerCase()];
+    persist();
   },
   removeShopping(id) {
     state.shopping = state.shopping.filter((i) => i.id !== id);

@@ -128,6 +128,10 @@ button { font-family: inherit; cursor: pointer; }
 
 .todo.done .list-title { text-decoration: line-through; color: var(--muted); }
 .shop-item.done .list-title { text-decoration: line-through; color: var(--muted); }
+.shop-group-head { margin: 14px 4px 6px; }
+.store-tag { color: #fff; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+.store-tag-btn { border: none; background: var(--border); color: var(--text); font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
+.store-tag-btn.empty { color: var(--muted); }
 input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--tint); flex-shrink: 0; }
 
 /* Buttons */

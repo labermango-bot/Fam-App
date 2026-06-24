@@ -76,15 +76,29 @@ const EVENT_TEMPLATES = [
 ];
 
 // ToDo-Vorlagen: füllen beim Anlegen Titel, Priorität und eine Notiz-Liste
-// vor (alles danach frei editierbar).
+// vor (alles danach frei editierbar). Einkaufen läuft über die eigene
+// abhakbare Einkaufsliste, nicht hier.
 const TODO_TEMPLATES = [
-  { emoji: "🛒", name: "Einkaufen", title: "Einkaufen", priority: "normal",
-    notes: "Milch\nBrot\nButter\nEier\nObst\nGemüse" },
-  { emoji: "🧺", name: "Wocheneinkauf", title: "Wocheneinkauf", priority: "normal",
-    notes: "Getränke\nNudeln/Reis\nGemüse & Obst\nMilchprodukte\nBrot\nSnacks für die Kinder\nPutz-/Hygienezeug" },
   { emoji: "💊", name: "Apotheke", title: "In die Apotheke", priority: "normal",
     notes: "Rezept einlösen\n" },
   { emoji: "🎁", name: "Geschenk besorgen", title: "Geschenk besorgen", priority: "normal", notes: "" },
+];
+
+// Märkte für die Einkaufsliste (farbige Schildchen statt Marken-Logos —
+// offline-tauglich, ohne geschützte Bilddateien).
+const STORES = [
+  { id: "aldi", label: "Aldi", color: "#2c6e9b" },
+  { id: "rewe", label: "Rewe", color: "#cc071e" },
+  { id: "penny", label: "Penny", color: "#e2680b" },
+  { id: "edeka", label: "Edeka", color: "#b8860b" },
+  { id: "dm", label: "dm", color: "#0a8a8a" },
+];
+const storeById = (id) => STORES.find((s) => s.id === id) || null;
+
+// Einkaufslisten-Vorlagen: fügen abhakbare Artikel hinzu (optional mit Markt).
+const SHOP_PRESETS = [
+  { name: "🧺 Wocheneinkauf", items: ["Milch","Brot","Butter","Eier","Obst","Gemüse","Joghurt","Käse","Nudeln","Reis"] },
+  { name: "🧴 Drogerie (dm)", shop: "dm", items: ["Zahnpasta","Duschgel","Shampoo","Windeln","Feuchttücher","Waschmittel"] },
 ];
 
 const todayISO = () => {
@@ -822,6 +836,36 @@ function openDayDialog(iso) {
 // ---------------------------------------------------------------------------
 // View: ToDos
 // ---------------------------------------------------------------------------
+function storeTagButton(i) {
+  const s = storeById(i.shop);
+  return el("button", {
+    class: "store-tag-btn" + (s ? "" : " empty"),
+    style: s ? `background:${s.color};color:#fff` : "",
+    title: "Markt wählen",
+    onclick: (ev) => { ev.preventDefault(); openShopChooser(i); },
+  }, s ? s.label : "＋ Markt");
+}
+
+function openShopChooser(i) {
+  const body = el("div", { class: "chip-row" },
+    ...STORES.map((s) => el("button", {
+      class: "chip", style: `background:${s.color};border-color:${s.color};color:#fff`,
+      onclick: () => { store.setShoppingShop(i.id, s.id); closeModal(); },
+    }, s.label)),
+    el("button", { class: "chip", onclick: () => { store.setShoppingShop(i.id, ""); closeModal(); } }, "— keiner —"),
+  );
+  openModal(`„${i.text}" – wo kaufen?`, body);
+}
+
+function shopItemRow(i) {
+  return el("label", { class: "list-row shop-item" + (i.done ? " done" : "") },
+    el("input", { type: "checkbox", checked: i.done, onchange: () => store.toggleShopping(i.id) }),
+    el("div", { class: "list-main" }, el("div", { class: "list-title" }, i.text)),
+    storeTagButton(i),
+    el("button", { class: "icon-btn ghost", onclick: (ev) => { ev.preventDefault(); store.removeShopping(i.id); } }, "🗑"),
+  );
+}
+
 function renderShopping(root) {
   const items = store.shopping();
   const sec = section("🛒 Einkaufsliste");
@@ -843,7 +887,7 @@ function renderShopping(root) {
     ));
   }
 
-  // Schnell-Eingabe: eine Zeile / ein Komma = ein Artikel (WhatsApp einfügbar).
+  // Schnell-Eingabe (WhatsApp einfügbar) + Vorlagen.
   const input = el("textarea", { class: "input", rows: "2",
     placeholder: "Artikel eingeben oder WhatsApp-Liste einfügen – eine Zeile oder Komma = ein Artikel …" });
   const addBtn = el("button", { class: "btn primary", onclick: () => {
@@ -851,26 +895,42 @@ function renderShopping(root) {
     input.value = "";
     if (!n) input.focus();
   }}, "+ Auf die Liste");
-  sec.append(el("div", { class: "card capture" }, input, el("div", { class: "row gap wrap" }, addBtn)));
+  const presetSel = el("select", { class: "input tmpl-select" },
+    el("option", { value: "" }, "📋 Vorlage hinzufügen …"),
+    ...SHOP_PRESETS.map((p, idx) => el("option", { value: String(idx) }, p.name)),
+  );
+  presetSel.onchange = () => {
+    const p = SHOP_PRESETS[Number(presetSel.value)];
+    presetSel.value = "";
+    if (p) store.addShopping(p.items.join("\n"), p.shop || null);
+  };
+  sec.append(el("div", { class: "card capture" }, input, el("div", { class: "row gap wrap" }, addBtn, presetSel)));
 
   const openItems = items.filter((i) => !i.done);
   const doneItems = items.filter((i) => i.done);
   if (!items.length) {
     sec.append(el("p", { class: "muted small" }, "Liste ist leer."));
-  } else {
-    [...openItems, ...doneItems].forEach((i) => {
-      sec.append(
-        el("label", { class: "list-row shop-item" + (i.done ? " done" : "") },
-          el("input", { type: "checkbox", checked: i.done, onchange: () => store.toggleShopping(i.id) }),
-          el("div", { class: "list-main" }, el("div", { class: "list-title" }, i.text)),
-          el("button", { class: "icon-btn ghost", onclick: (ev) => { ev.preventDefault(); store.removeShopping(i.id); } }, "🗑"),
-        )
-      );
-    });
-    if (doneItems.length) {
-      sec.append(el("button", { class: "btn small block", onclick: () => store.clearCheckedShopping() },
-        `Erledigte entfernen (${doneItems.length})`));
-    }
+    root.append(sec);
+    return;
+  }
+
+  // Offene Artikel nach Markt gruppieren (bekannte Märkte zuerst, dann ohne).
+  [...STORES.map((s) => s.id), ""].forEach((sid) => {
+    const groupItems = openItems.filter((i) => (i.shop || "") === sid);
+    if (!groupItems.length) return;
+    const s = storeById(sid);
+    sec.append(el("div", { class: "shop-group-head" },
+      s ? el("span", { class: "store-tag", style: `background:${s.color}` }, s.label)
+        : el("span", { class: "muted small" }, "Noch zuzuordnen"),
+    ));
+    groupItems.forEach((i) => sec.append(shopItemRow(i)));
+  });
+
+  if (doneItems.length) {
+    sec.append(el("div", { class: "shop-group-head" }, el("span", { class: "muted small" }, "Erledigt")));
+    doneItems.forEach((i) => sec.append(shopItemRow(i)));
+    sec.append(el("button", { class: "btn small block", onclick: () => store.clearCheckedShopping() },
+      `Erledigte entfernen (${doneItems.length})`));
   }
   root.append(sec);
 }
