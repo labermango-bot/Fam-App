@@ -75,6 +75,18 @@ const EVENT_TEMPLATES = [
   ]},
 ];
 
+// ToDo-Vorlagen: füllen beim Anlegen Titel, Priorität und eine Notiz-Liste
+// vor (alles danach frei editierbar).
+const TODO_TEMPLATES = [
+  { emoji: "🛒", name: "Einkaufen", title: "Einkaufen", priority: "normal",
+    notes: "Milch\nBrot\nButter\nEier\nObst\nGemüse" },
+  { emoji: "🧺", name: "Wocheneinkauf", title: "Wocheneinkauf", priority: "normal",
+    notes: "Getränke\nNudeln/Reis\nGemüse & Obst\nMilchprodukte\nBrot\nSnacks für die Kinder\nPutz-/Hygienezeug" },
+  { emoji: "💊", name: "Apotheke", title: "In die Apotheke", priority: "normal",
+    notes: "Rezept einlösen\n" },
+  { emoji: "🎁", name: "Geschenk besorgen", title: "Geschenk besorgen", priority: "normal", notes: "" },
+];
+
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1156,8 +1168,27 @@ function openTodoDialog(existing = null, onSaved = null) {
       )
     : null;
 
+  // Vorlagen-Auswahl (nur bei neuen ToDos): füllt Titel/Priorität/Notizen vor.
+  let tmplField = null;
+  if (!isEdit && !linkedEvent) {
+    const tmplSelect = el("select", { class: "input tmpl-select" },
+      el("option", { value: "" }, "📋 Vorlage übernehmen …"),
+      ...TODO_TEMPLATES.map((tpl, i) => el("option", { value: String(i) }, `${tpl.emoji} ${tpl.name}`)),
+    );
+    tmplSelect.onchange = () => {
+      const tpl = TODO_TEMPLATES[Number(tmplSelect.value)];
+      tmplSelect.value = "";
+      if (!tpl) return;
+      if (!title.value.trim()) title.value = tpl.title;
+      if (tpl.priority) prio.value = tpl.priority;
+      if (tpl.notes) notes.value = notes.value.trim() ? notes.value.trim() + "\n" + tpl.notes : tpl.notes;
+    };
+    tmplField = field("Vorlage", tmplSelect);
+  }
+
   const body = el("div", {},
     linkBanner,
+    tmplField,
     field("Aufgabe", title),
     el("div", { class: "row gap" }, field("Für wen?", memberSel), field("Priorität", prio)),
     field("Fällig am", due),
