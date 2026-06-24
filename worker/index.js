@@ -119,13 +119,14 @@ Wenn im Inhalt mehrere Termine/ToDos stehen, gib mehrere items zurück. Wenn nic
     return json({ error: `Workers-AI-Fehler: ${err && err.message ? err.message : err}` }, 502);
   }
 
-  const raw = String((aiRes && aiRes.response) || "").trim();
-  const items = normalizeItems(extractJSON(raw));
+  // Mit guided_json liefert Workers AI "response" bereits als fertiges
+  // JSON-Objekt; ohne guided_json (oder bei anderen Modellen) als Text.
+  const resp = aiRes && aiRes.response;
+  const parsed = resp && typeof resp === "object" ? resp : extractJSON(String(resp || "").trim());
+  const items = normalizeItems(parsed);
   if (!items) {
-    const debug = raw
-      ? `Roh-Antwort: ${raw.slice(0, 500)}`
-      : `Leere Antwort. Objekt: ${JSON.stringify(aiRes).slice(0, 500)}`;
-    return json({ error: `KI-Antwort konnte nicht ausgewertet werden. ${debug}`, raw }, 502);
+    const debug = JSON.stringify(resp ?? aiRes).slice(0, 500);
+    return json({ error: `KI-Antwort konnte nicht ausgewertet werden. Roh-Antwort: ${debug}`, raw: resp }, 502);
   }
   return json({ items });
 }
