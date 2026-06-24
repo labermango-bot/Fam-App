@@ -146,40 +146,102 @@ function renderTabBar(active) {
 }
 
 // ---------------------------------------------------------------------------
-// View: Heute
+// View: Cockpit (Startseite „Heute")
 // ---------------------------------------------------------------------------
-function renderToday(root) {
-  const events = [...store.events()].sort(sortEvents);
-  const upcoming = events.filter((e) => daysFromToday(e.date) >= 0).slice(0, 12);
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 11) return "Guten Morgen";
+  if (h < 18) return "Guten Tag";
+  return "Guten Abend";
+}
 
-  // Vorbereitungen, die jetzt anstehen (Termin nah genug für Vorlaufzeit).
-  const prepDue = [];
+// Familien-Ampel: bewertet offene Vorbereitungen anhand der Vorlaufzeit.
+//   rot   = Termin steht heute/morgen an und Vorbereitung fehlt, oder die
+//           Vorbereitungs-Frist ist bereits überschritten.
+//   gelb  = eine Vorbereitungs-Frist ist in den nächsten 48 h fällig.
+//   grün  = nichts Offenes in Sicht.
+// Liefert zugleich die Liste der betroffenen Punkte (rot zuerst).
+function familyStatus(events) {
+  let level = "green";
+  const alerts = [];
   events.forEach((e) => {
-    const d = daysFromToday(e.date);
-    if (d < 0) return;
+    const dEvent = daysFromToday(e.date);
+    if (dEvent < 0) return;
     (e.prep || []).forEach((p) => {
-      if (!p.done && d <= (p.leadDays || 0) + 0.5 || (!p.done && d <= 1)) {
-        prepDue.push({ event: e, prep: p, daysLeft: d });
+      if (p.done) return;
+      const dDeadline = dEvent - (p.leadDays || 0); // Tage bis zur Vorbereitungs-Frist
+      if (dEvent <= 1 || dDeadline < 0) {
+        alerts.push({ event: e, prep: p, urgency: "red" });
+        level = "red";
+      } else if (dDeadline <= 2) {
+        alerts.push({ event: e, prep: p, urgency: "yellow" });
+        if (level !== "red") level = "yellow";
       }
     });
   });
+  alerts.sort((a, b) => (a.urgency === b.urgency ? 0 : a.urgency === "red" ? -1 : 1));
+  return { level, alerts };
+}
 
-  const openTodos = store.todos().filter((t) => !t.done);
+// Lokale Wochen-Zusammenfassung (kein KI-Aufruf): Termine & Vorbereitungen
+// der nächsten 7 Tage, plus den vollsten Tag.
+function weekSummary(events) {
+  const wk = events.filter((e) => {
+    const d = daysFromToday(e.date);
+    return d >= 0 && d <= 6;
+  });
+  const openPrep = wk.reduce((n, e) => n + (e.prep || []).filter((p) => !p.done).length, 0);
+  const byDay = {};
+  wk.forEach((e) => { byDay[e.date] = (byDay[e.date] || 0) + 1; });
+  let busiest = null, max = 1;
+  Object.entries(byDay).forEach(([d, n]) => { if (n > max) { max = n; busiest = d; } });
+  const parts = [`${wk.length} Termin${wk.length === 1 ? "" : "e"} in den nächsten 7 Tagen`];
+  if (openPrep) parts.push(`${openPrep} Vorbereitung${openPrep === 1 ? "" : "en"} offen`);
+  if (busiest) parts.push(`${relativeDay(busiest)} besonders voll (${max} Termine)`);
+  return parts;
+}
+
+// Kurzstatus pro Familienmitglied für das Cockpit.
+function memberStatusLabel(m, events) {
+  const openTodos = store.todos().filter((t) => t.memberId === m.id && !t.done).length;
+  const todayEvents = events.filter((e) => e.date === todayISO() && (e.memberIds || []).includes(m.id)).length;
+  const bits = [];
+  if (openTodos) bits.push(`${openTodos} Aufgabe${openTodos === 1 ? "" : "n"}`);
+  if (todayEvents) bits.push(`${todayEvents} Termin${todayEvents === 1 ? "" : "e"} heute`);
+  return bits.length ? bits.join(" · ") : "alles erledigt ✓";
+}
+
+function renderToday(root) {
+  const events = [...store.events()].sort(sortEvents);
+  const upcoming = events.filter((e) => daysFromToday(e.date) >= 0).slice(0, 12);
   const inboxCount = store.inbox().filter((i) => !i.processed).length;
+  const { level, alerts } = familyStatus(events);
 
-  // Schnellzugriff-Karten
-  const stats = el("div", { class: "stat-row" },
-    statCard("📥", inboxCount, "im Posteingang", "#inbox"),
-    statCard("📅", upcoming.length, "Termine bald", "#calendar"),
-    statCard("✅", openTodos.length, "offene ToDos", "#todos"),
-  );
-  root.append(stats);
+  // Begrüßung + Datum
+  const now = new Date();
+  root.append(el("div", { class: "greet-card" },
+    el("div", { class: "greet-hi" }, `${greeting()} 👋`),
+    el("div", { class: "greet-date" }, `${WEEKDAYS[now.getDay()]}., ${now.getDate()}. ${MONTHS[now.getMonth()]}`),
+  ));
 
-  if (prepDue.length) {
-    const sec = section("⚠️ Jetzt vorbereiten");
-    prepDue.slice(0, 8).forEach(({ event, prep, daysLeft }) => {
+  // Familien-Ampel
+  const ampelText = {
+    green: "Alles im Griff – keine offenen Vorbereitungen.",
+    yellow: "Bald dran: etwas muss in den nächsten 48 Stunden erledigt werden.",
+    red: "Achtung: ein Termin steht kurz bevor und es fehlt noch Vorbereitung.",
+  };
+  const ampelDot = { green: "🟢", yellow: "🟡", red: "🔴" };
+  root.append(el("div", { class: "ampel ampel-" + level },
+    el("span", { class: "ampel-dot" }, ampelDot[level]),
+    el("span", {}, ampelText[level]),
+  ));
+
+  // Heute wichtig (fällige Vorbereitungen)
+  if (alerts.length) {
+    const sec = section("⚠️ Heute wichtig");
+    alerts.slice(0, 8).forEach(({ event, prep, urgency }) => {
       sec.append(
-        el("label", { class: "list-row prep-row" },
+        el("label", { class: "list-row prep-row" + (urgency === "red" ? " urgent" : "") },
           el("input", { type: "checkbox", onchange: () => store.togglePrep(event.id, prep.id) }),
           el("div", { class: "list-main" },
             el("div", { class: "list-title" }, prep.text),
@@ -191,7 +253,15 @@ function renderToday(root) {
     root.append(sec);
   }
 
-  const sec = section("Anstehende Termine");
+  // Wochen-Zusammenfassung (lokal)
+  const sumSec = section("🤖 Diese Woche");
+  const sumCard = el("div", { class: "card" });
+  weekSummary(events).forEach((s) => sumCard.append(el("div", { class: "summary-line" }, "• " + s)));
+  sumSec.append(sumCard);
+  root.append(sumSec);
+
+  // Nächste Termine
+  const sec = section("📅 Nächste Termine");
   if (!upcoming.length) {
     sec.append(emptyState("Noch keine Termine.", "Termin hinzufügen", () => openEventDialog()));
   } else {
@@ -206,15 +276,36 @@ function renderToday(root) {
   }
   root.append(sec);
 
-  root.append(fab(() => openEventDialog()));
-}
+  // Familienstatus
+  if (store.members().length) {
+    const famSec = section("👨‍👩‍👧‍👦 Familienstatus");
+    store.members().forEach((m) => {
+      famSec.append(
+        el("a", { class: "list-row", href: "#todos" },
+          el("span", { class: "avatar", style: `background:${m.color}` }, m.name.slice(0, 1)),
+          el("div", { class: "list-main" },
+            el("div", { class: "list-title" }, m.name),
+            el("div", { class: "list-sub" }, memberStatusLabel(m, events)),
+          ),
+        )
+      );
+    });
+    root.append(famSec);
+  }
 
-function statCard(icon, count, label, href) {
-  return el("a", { class: "stat-card", href },
-    el("span", { class: "stat-icon" }, icon),
-    el("span", { class: "stat-num" }, String(count)),
-    el("span", { class: "stat-label" }, label),
+  // Neue Eingänge
+  const inSec = section("📥 Posteingang");
+  inSec.append(
+    el("a", { class: "list-row", href: "#inbox" },
+      el("div", { class: "list-main" },
+        el("div", { class: "list-title" }, inboxCount ? `${inboxCount} neue Eingänge` : "Posteingang leer"),
+        el("div", { class: "list-sub" }, inboxCount ? "Tippen zum Sortieren" : "🎉 nichts zu tun"),
+      ),
+    )
   );
+  root.append(inSec);
+
+  root.append(fab(() => openEventDialog()));
 }
 
 // ---------------------------------------------------------------------------

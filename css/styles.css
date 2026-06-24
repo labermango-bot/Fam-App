@@ -84,6 +84,30 @@ button { font-family: inherit; cursor: pointer; }
 .stat-num { font-size: 26px; font-weight: 700; }
 .stat-label { font-size: 11px; color: var(--muted); text-align: center; }
 
+/* Cockpit: Begrüßung */
+.greet-card { padding: 4px 4px 2px; }
+.greet-hi { font-size: 24px; font-weight: 700; }
+.greet-date { font-size: 15px; color: var(--muted); }
+
+/* Cockpit: Familien-Ampel */
+.ampel {
+  display: flex; align-items: center; gap: 10px;
+  border-radius: var(--radius); padding: 12px 14px; margin-top: 12px;
+  font-size: 15px; font-weight: 600;
+  border: 1px solid var(--border);
+}
+.ampel-dot { font-size: 18px; }
+.ampel-green { background: color-mix(in srgb, #30d158 16%, var(--card)); }
+.ampel-yellow { background: color-mix(in srgb, #ff9f0a 18%, var(--card)); }
+.ampel-red { background: color-mix(in srgb, var(--danger) 16%, var(--card)); }
+
+/* Cockpit: Wochen-Zusammenfassung */
+.summary-line { font-size: 15px; padding: 3px 0; }
+.summary-line + .summary-line { border-top: 1px solid var(--border); }
+
+/* Cockpit: dringende Vorbereitung (rot) */
+.prep-row.urgent { border-left: 4px solid var(--danger); }
+
 .todo.done .list-title { text-decoration: line-through; color: var(--muted); }
 input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--tint); flex-shrink: 0; }
 
