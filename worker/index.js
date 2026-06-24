@@ -351,6 +351,11 @@ function eventToVEVENT(event, memberNames) {
     descParts.push("Vorbereiten:");
     openPrep.forEach((p) => descParts.push("- " + p.text));
   }
+  if ((event.bring || []).length) {
+    descParts.push("Mitbringen:");
+    event.bring.forEach((b) => descParts.push("- " + b.text));
+  }
+  if (event.budget) descParts.push("Budget: " + event.budget);
   if (descParts.length) lines.push(`DESCRIPTION:${escapeText(descParts.join("\n"))}`);
   if (event.reminderLeadMinutes != null && !start.allDay) {
     lines.push(...vAlarm(event.reminderLeadMinutes, "Erinnerung: " + event.title));

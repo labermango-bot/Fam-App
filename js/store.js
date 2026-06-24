@@ -176,6 +176,8 @@ export const store = {
       notes: data.notes || "",
       memberIds: data.memberIds || [],
       prep: data.prep || [],      // [{id, text, done, leadDays}]
+      bring: data.bring || [],    // [{id, text, done}] — am Termin mitbringen
+      budget: data.budget || "",  // freie Angabe, z. B. "20 €"
       reminderLeadMinutes: data.reminderLeadMinutes ?? 60,
       source: data.source || "manual",
       createdAt: new Date().toISOString(),

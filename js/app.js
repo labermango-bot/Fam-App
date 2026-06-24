@@ -597,8 +597,34 @@ function convertInbox(item, type) {
 // View: Kalender
 // ---------------------------------------------------------------------------
 let calCursor = todayISO();
+let calView = "month"; // "month" | "week"
+
+const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function startOfWeek(iso) {
+  const d = parseISO(iso);
+  const off = (d.getDay() + 6) % 7; // Montag = 0
+  d.setDate(d.getDate() - off);
+  return isoOf(d);
+}
+function shiftWeek(delta) {
+  const d = parseISO(calCursor);
+  d.setDate(d.getDate() + delta * 7);
+  calCursor = isoOf(d);
+  render();
+}
+
+function viewToggle() {
+  const mk = (id, label) => el("button", {
+    class: "seg" + (calView === id ? " active" : ""),
+    onclick: () => { calView = id; render(); },
+  }, label);
+  return el("div", { class: "seg-row" }, mk("month", "Monat"), mk("week", "Woche"));
+}
 
 function renderCalendar(root) {
+  root.append(viewToggle());
+  if (calView === "week") return renderWeek(root);
+
   const cursor = parseISO(calCursor);
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -674,6 +700,46 @@ function renderCalendar(root) {
   root.append(sec);
 
   root.append(fab(() => openEventDialog()));
+}
+
+// Wochenansicht: Mo–So, pro Tag die Termine (gefiltert), mit Ferien-Hinweis.
+function renderWeek(root) {
+  const monday = startOfWeek(calCursor);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = parseISO(monday);
+    d.setDate(d.getDate() + i);
+    days.push(isoOf(d));
+  }
+  const sunday = days[6];
+
+  const nav = el("div", { class: "cal-nav" },
+    el("button", { class: "icon-btn", onclick: () => shiftWeek(-1) }, "‹"),
+    el("div", { class: "cal-month" }, `${parseISO(monday).getDate()}. ${MONTHS[parseISO(monday).getMonth()]} – ${parseISO(sunday).getDate()}. ${MONTHS[parseISO(sunday).getMonth()]}`),
+    el("button", { class: "icon-btn", onclick: () => shiftWeek(1) }, "›"),
+  );
+  root.append(nav);
+  root.append(renderMemberFilter());
+
+  const eventsByDay = groupEventsByDate();
+  days.forEach((iso) => {
+    const dayEvents = (eventsByDay[iso] || []).filter(passesFilter).sort(sortEvents);
+    const holiday = holidayOn(iso);
+    const isToday = iso === todayISO();
+    const head = el("div", { class: "week-day-head" + (isToday ? " today" : "") },
+      el("span", {}, relativeDay(iso)),
+      holiday ? el("span", { class: "badge-event" }, "🏖 " + holiday.name) : null,
+    );
+    const sec = el("section", { class: "section week-day" }, head);
+    if (!dayEvents.length) {
+      sec.append(el("div", { class: "muted small week-empty" }, "—"));
+    } else {
+      dayEvents.forEach((e) => sec.append(eventRow(e)));
+    }
+    root.append(sec);
+  });
+
+  root.append(fab(() => openEventDialog({ date: todayISO() >= monday && todayISO() <= sunday ? todayISO() : monday })));
 }
 
 let activeFilter = null; // memberId oder null = alle
@@ -879,6 +945,7 @@ function sortEvents(a, b) {
 function eventRow(e) {
   const members = (e.memberIds || []).map((id) => store.member(id)).filter(Boolean);
   const openPrep = (e.prep || []).filter((p) => !p.done).length;
+  const bringCount = (e.bring || []).length;
   return el("div", { class: "list-row event", onclick: () => openEventDialog(e) },
     el("div", { class: "time-col" },
       e.time ? el("span", { class: "time" }, e.time) : el("span", { class: "time muted" }, "ganzt."),
@@ -889,6 +956,8 @@ function eventRow(e) {
         e.location ? el("span", { class: "muted" }, "📍 " + e.location + "  ") : null,
         ...members.map((m) => el("span", { class: "person-pill", style: `background:${m.color}` }, m.name)),
         openPrep ? el("span", { class: "badge-prep" }, `📋 ${openPrep}`) : null,
+        bringCount ? el("span", { class: "badge-bring" }, `🎒 ${bringCount}`) : null,
+        e.budget ? el("span", { class: "badge-budget" }, `💶 ${e.budget}`) : null,
       ),
     ),
   );
@@ -987,6 +1056,24 @@ function openEventDialog(existing = null, onSaved = null) {
     renderPrep();
   };
 
+  // Mitbringen-Checkliste (am Termin selbst dabei zu haben)
+  const bringList = el("div", { class: "prep-edit" });
+  const bringItems = (e.bring || []).map((b) => ({ ...b }));
+  function renderBring() {
+    bringList.innerHTML = "";
+    bringItems.forEach((b, idx) => {
+      bringList.append(el("div", { class: "row gap center" },
+        el("input", { class: "input flex", value: b.text, placeholder: "z. B. Geschenk", oninput: (ev) => b.text = ev.target.value }),
+        el("button", { class: "icon-btn ghost", type: "button", onclick: () => { bringItems.splice(idx,1); renderBring(); } }, "✕"),
+      ));
+    });
+  }
+  renderBring();
+  const addBringBtn = el("button", { class: "btn small", type: "button", onclick: () => { bringItems.push({ id: store.uid(), text: "", done: false }); renderBring(); } }, "+ Mitbringen");
+
+  // Budget (freie Angabe)
+  const budget = el("input", { class: "input", value: e.budget || "", placeholder: "z. B. 20 €" });
+
   const body = el("div", {},
     field("Titel", title),
     el("div", { class: "row gap" }, field("Datum", date), field("Uhrzeit", time)),
@@ -994,6 +1081,8 @@ function openEventDialog(existing = null, onSaved = null) {
     field("Ort", location),
     field("Für wen?", memberWrap),
     field("Vorbereiten", el("div", {}, tmplSelect, prepList, addPrepBtn)),
+    field("Mitbringen", el("div", {}, bringList, addBringBtn)),
+    field("Budget", budget),
     field("Notizen", notes),
     el("div", { class: "modal-actions" },
       isEdit ? el("button", { class: "btn danger", onclick: () => { if (confirm("Termin löschen?")) { store.removeEvent(e.id); closeModal(); } } }, "Löschen") : null,
@@ -1008,6 +1097,7 @@ function openEventDialog(existing = null, onSaved = null) {
       title: title.value.trim(), date: date.value, time: time.value, endTime: endTime.value,
       location: location.value.trim(), notes: notes.value.trim(),
       memberIds: [...selected], prep: prepItems.filter((p) => p.text.trim()),
+      bring: bringItems.filter((b) => b.text.trim()), budget: budget.value.trim(),
       reminderLeadMinutes: Number(reminder.value), source: e.source,
     };
     if (isEdit) store.updateEvent(e.id, data);
