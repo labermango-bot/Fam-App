@@ -127,6 +127,11 @@ const relativeDay = (iso) => {
   return fmtDate(iso);
 };
 
+// Universeller Google-Maps-Routen-Link: öffnet auf dem iPhone die Google-Maps-
+// App (falls installiert, sonst die Karte im Browser) mit Route zum Ziel.
+const mapsUrl = (location) =>
+  `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(location)}`;
+
 // ---------------------------------------------------------------------------
 // Routing
 // ---------------------------------------------------------------------------
@@ -1103,7 +1108,10 @@ function eventRow(e) {
     el("div", { class: "list-main" },
       el("div", { class: "list-title" }, e.title),
       el("div", { class: "list-sub" },
-        e.location ? el("span", { class: "muted" }, "📍 " + e.location + "  ") : null,
+        e.location
+          ? el("a", { class: "event-loc", href: mapsUrl(e.location), target: "_blank", rel: "noopener",
+              title: "Route in Google Maps öffnen", onclick: (ev) => ev.stopPropagation() }, "📍 " + e.location)
+          : null,
         ...members.map((m) => el("span", { class: "person-pill", style: `background:${m.color}` }, m.name)),
         openPrep ? el("span", { class: "badge-prep" }, `📋 ${openPrep}`) : null,
         bringCount ? el("span", { class: "badge-bring" }, `🎒 ${bringCount}`) : null,
@@ -1153,7 +1161,9 @@ function openEventDialog(existing = null, onSaved = null) {
   const date = el("input", { class: "input", type: "date", value: e.date });
   const time = el("input", { class: "input", type: "time", value: e.time });
   const endTime = el("input", { class: "input", type: "time", value: e.endTime });
-  const location = el("input", { class: "input", value: e.location, placeholder: "Ort (optional)" });
+  const location = el("input", { class: "input flex", value: e.location, placeholder: "Ort (optional)" });
+  const routeBtn = el("button", { class: "btn small", type: "button", title: "Route in Google Maps",
+    onclick: () => { const v = location.value.trim(); if (v) window.open(mapsUrl(v), "_blank", "noopener"); else location.focus(); } }, "🗺 Route");
   const notes = el("textarea", { class: "input", rows: "2", placeholder: "Notizen" }, e.notes || "");
   const reminder = el("select", { class: "input" },
     ...[[0,"zur Startzeit"],[15,"15 Min vorher"],[30,"30 Min vorher"],[60,"1 Std vorher"],[120,"2 Std vorher"],[1440,"1 Tag vorher"]]
@@ -1228,7 +1238,7 @@ function openEventDialog(existing = null, onSaved = null) {
     field("Titel", title),
     el("div", { class: "row gap" }, field("Datum", date), field("Uhrzeit", time)),
     el("div", { class: "row gap" }, field("Ende (optional)", endTime), field("Erinnerung", reminder)),
-    field("Ort", location),
+    field("Ort", el("div", { class: "row gap center" }, location, routeBtn)),
     field("Für wen?", memberWrap),
     field("Vorbereiten", el("div", {}, tmplSelect, prepList, addPrepBtn)),
     field("Mitbringen", el("div", {}, bringList, addBringBtn)),

@@ -63,6 +63,7 @@ button { font-family: inherit; cursor: pointer; }
 .time { font-weight: 700; font-size: 15px; }
 
 .person-pill { color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+.event-loc { color: var(--tint); text-decoration: none; }
 .badge-prep { background: #ff9f0a; color: #fff; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 10px; }
 .tag { font-size: 12px; font-weight: 600; color: var(--muted); }
 .muted { color: var(--muted); }
