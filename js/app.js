@@ -39,6 +39,41 @@ const SOURCE_LABELS = {
   prep: "🧩 Vorbereitung",
 };
 
+// Termin-Vorlagen: fertige Vorbereitungs-Checklisten mit Vorlaufzeit (in Tagen
+// vor dem Termin). Beim Anwenden werden die Schritte an die Vorbereitungsliste
+// angehängt; ist der Titel noch leer, wird der Vorlagenname vorgeschlagen.
+const EVENT_TEMPLATES = [
+  { emoji: "🎂", name: "Kindergeburtstag", prep: [
+    { text: "Geschenk besorgen", leadDays: 7 },
+    { text: "Karte schreiben", leadDays: 2 },
+    { text: "Geschenk verpacken", leadDays: 1 },
+  ]},
+  { emoji: "🏖", name: "Urlaub", prep: [
+    { text: "Reisepässe/Ausweise prüfen", leadDays: 7 },
+    { text: "Medikamente besorgen", leadDays: 3 },
+    { text: "Koffer packen", leadDays: 1 },
+  ]},
+  { emoji: "🩺", name: "Arzttermin", prep: [
+    { text: "Versichertenkarte bereitlegen", leadDays: 1 },
+    { text: "Vorbefunde/Unterlagen einpacken", leadDays: 1 },
+  ]},
+  { emoji: "🎒", name: "Klassenfahrt", prep: [
+    { text: "Anmeldung unterschreiben", leadDays: 7 },
+    { text: "Betrag einzahlen", leadDays: 5 },
+    { text: "Koffer packen", leadDays: 1 },
+  ]},
+  { emoji: "🎉", name: "Schulfest", prep: [
+    { text: "Kuchen backen", leadDays: 1 },
+    { text: "Helfer-Schicht eintragen", leadDays: 3 },
+  ]},
+  { emoji: "👪", name: "Elternabend", prep: [
+    { text: "Fragen notieren", leadDays: 1 },
+  ]},
+  { emoji: "⚽", name: "Sport/Verein", prep: [
+    { text: "Sportzeug packen", leadDays: 1 },
+  ]},
+];
+
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -906,13 +941,27 @@ function openEventDialog(existing = null, onSaved = null) {
   renderPrep();
   const addPrepBtn = el("button", { class: "btn small", type: "button", onclick: () => { prepItems.push({ id: store.uid(), text: "", done: false, leadDays: 0 }); renderPrep(); } }, "+ Vorbereitungs-Schritt");
 
+  // Vorlagen-Auswahl: hängt fertige Checklisten an und schlägt ggf. den Titel vor.
+  const tmplSelect = el("select", { class: "input tmpl-select" },
+    el("option", { value: "" }, "📋 Vorlage übernehmen …"),
+    ...EVENT_TEMPLATES.map((t, i) => el("option", { value: String(i) }, `${t.emoji} ${t.name}`)),
+  );
+  tmplSelect.onchange = () => {
+    const t = EVENT_TEMPLATES[Number(tmplSelect.value)];
+    tmplSelect.value = "";
+    if (!t) return;
+    if (!title.value.trim()) title.value = t.name;
+    t.prep.forEach((p) => prepItems.push({ id: store.uid(), text: p.text, done: false, leadDays: p.leadDays }));
+    renderPrep();
+  };
+
   const body = el("div", {},
     field("Titel", title),
     el("div", { class: "row gap" }, field("Datum", date), field("Uhrzeit", time)),
     el("div", { class: "row gap" }, field("Ende (optional)", endTime), field("Erinnerung", reminder)),
     field("Ort", location),
     field("Für wen?", memberWrap),
-    field("Vorbereiten", el("div", {}, prepList, addPrepBtn)),
+    field("Vorbereiten", el("div", {}, tmplSelect, prepList, addPrepBtn)),
     field("Notizen", notes),
     el("div", { class: "modal-actions" },
       isEdit ? el("button", { class: "btn danger", onclick: () => { if (confirm("Termin löschen?")) { store.removeEvent(e.id); closeModal(); } } }, "Löschen") : null,

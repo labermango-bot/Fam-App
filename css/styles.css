@@ -108,6 +108,9 @@ button { font-family: inherit; cursor: pointer; }
 /* Cockpit: dringende Vorbereitung (rot) */
 .prep-row.urgent { border-left: 4px solid var(--danger); }
 
+/* Termin-Dialog: Vorlagen-Auswahl */
+.tmpl-select { margin-bottom: 8px; }
+
 .todo.done .list-title { text-decoration: line-through; color: var(--muted); }
 input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--tint); flex-shrink: 0; }
 
