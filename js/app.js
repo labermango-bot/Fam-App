@@ -725,6 +725,9 @@ function renderTodos(root) {
 function todoRow(t) {
   const m = store.member(t.memberId);
   const overdue = t.due && !t.done && daysFromToday(t.due) < 0;
+  // Aus einem Termin-Vorbereitungsschritt entstanden? Dann kennzeichnen und
+  // den Absprung zum Termin anbieten.
+  const linkedEvent = t.eventId ? store.event(t.eventId) : null;
   return el("div", { class: "list-row todo" + (t.done ? " done" : "") },
     el("input", { type: "checkbox", checked: t.done, onchange: () => store.toggleTodo(t.id) }),
     el("div", { class: "list-main", onclick: () => openTodoDialog(t) },
@@ -734,9 +737,14 @@ function todoRow(t) {
       el("div", { class: "list-sub" },
         m ? el("span", { class: "person-pill", style: `background:${m.color}` }, m.name) : null,
         t.due ? el("span", { class: overdue ? "danger" : "muted" }, (m ? " · " : "") + "fällig " + relativeDay(t.due)) : null,
-        t.source && t.source !== "manual" ? el("span", { class: "muted" }, " · " + (SOURCE_LABELS[t.source] || "")) : null,
+        linkedEvent
+          ? el("span", { class: "badge-event" }, `📅 ${linkedEvent.title}`)
+          : (t.source && t.source !== "manual" ? el("span", { class: "muted" }, " · " + (SOURCE_LABELS[t.source] || "")) : null),
       ),
     ),
+    linkedEvent
+      ? el("button", { class: "icon-btn ghost", title: "Zum Termin springen", onclick: (ev) => { ev.stopPropagation(); openEventDialog(linkedEvent); } }, "📅")
+      : null,
     el("button", { class: "icon-btn ghost", onclick: () => store.removeTodo(t.id) }, "🗑"),
   );
 }
@@ -1003,7 +1011,17 @@ function openTodoDialog(existing = null, onSaved = null) {
     ...[["low","Niedrig"],["normal","Normal"],["high","Hoch 🔴"]].map(([v,l]) => el("option", { value: v, selected: t.priority === v }, l)));
   const notes = el("textarea", { class: "input", rows: "2", placeholder: "Notizen" }, t.notes || "");
 
+  // Stammt das ToDo aus einem Termin? Banner mit Absprung anzeigen.
+  const linkedEvent = t.eventId ? store.event(t.eventId) : null;
+  const linkBanner = linkedEvent
+    ? el("div", { class: "event-link-banner", onclick: () => { closeModal(); openEventDialog(linkedEvent); } },
+        el("span", {}, `📅 Gehört zum Termin „${linkedEvent.title}" (${relativeDay(linkedEvent.date)})`),
+        el("span", { class: "event-link-go" }, "Zum Termin ›"),
+      )
+    : null;
+
   const body = el("div", {},
+    linkBanner,
     field("Aufgabe", title),
     el("div", { class: "row gap" }, field("Für wen?", memberSel), field("Priorität", prio)),
     field("Fällig am", due),
