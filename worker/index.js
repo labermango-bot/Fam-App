@@ -122,7 +122,10 @@ Wenn im Inhalt mehrere Termine/ToDos stehen, gib mehrere items zurück. Wenn nic
   const raw = String((aiRes && aiRes.response) || "").trim();
   const items = normalizeItems(extractJSON(raw));
   if (!items) {
-    return json({ error: "KI-Antwort konnte nicht ausgewertet werden.", raw }, 502);
+    const debug = raw
+      ? `Roh-Antwort: ${raw.slice(0, 500)}`
+      : `Leere Antwort. Objekt: ${JSON.stringify(aiRes).slice(0, 500)}`;
+    return json({ error: `KI-Antwort konnte nicht ausgewertet werden. ${debug}`, raw }, 502);
   }
   return json({ items });
 }

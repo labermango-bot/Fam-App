@@ -236,7 +236,7 @@ function renderInbox(root) {
       if (file) runCapture({ file, source: sourceSel.value });
     },
   });
-  const photoBtn = el("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, "📷 Foto / Screenshot");
+  const photoBtn = el("button", { class: "btn primary", type: "button", onclick: () => fileInput.click() }, "✨📷 Foto/Screenshot → KI");
   const aiBtn = el("button", { class: "btn primary", type: "button", onclick: () => {
     const t = text.value.trim();
     if (!t) return;
