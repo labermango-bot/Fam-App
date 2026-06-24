@@ -214,6 +214,8 @@ select.input { -webkit-appearance: none; appearance: none; }
 .cal-cell.today .cal-day-num { font-weight: 700; }
 .cal-dots { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .dot { width: 6px; height: 6px; border-radius: 50%; }
+.cal-bday { font-size: 11px; line-height: 1; }
+.cal-bday-lg { font-size: 22px; }
 
 /* Kalender: Umschalter Monat/Woche */
 .seg-row { display: flex; gap: 4px; background: var(--border); border-radius: 10px; padding: 3px; margin-bottom: 10px; }

@@ -85,6 +85,7 @@ function seedState() {
     todos: [],
     inbox: [],
     shopping: [],
+    birthdays: [],
     meta: { createdAt: new Date().toISOString(), onboarded: false },
   };
 }
@@ -104,6 +105,7 @@ function load() {
       todos: parsed.todos || [],
       inbox: parsed.inbox || [],
       shopping: parsed.shopping || [],
+      birthdays: parsed.birthdays || [],
       meta: parsed.meta || { createdAt: new Date().toISOString() },
     };
   } catch (e) {
@@ -330,6 +332,33 @@ export const store = {
     persist();
   },
 
+  // --- Geburtstage --------------------------------------------------------
+  birthdays() {
+    return state.birthdays;
+  },
+  addBirthday({ name, day, month, year, memberId }) {
+    const b = {
+      id: uid(),
+      name: name || "Geburtstag",
+      day: Number(day),            // 1–31
+      month: Number(month),        // 1–12
+      year: year ? Number(year) : null, // optional, für Altersanzeige
+      memberId: memberId || null,
+    };
+    state.birthdays.push(b);
+    persist();
+    return b;
+  },
+  updateBirthday(id, patch) {
+    const b = state.birthdays.find((x) => x.id === id);
+    if (b) Object.assign(b, patch);
+    persist();
+  },
+  removeBirthday(id) {
+    state.birthdays = state.birthdays.filter((b) => b.id !== id);
+    persist();
+  },
+
   // --- Import / Export ----------------------------------------------------
   exportJSON() {
     return JSON.stringify(state, null, 2);
@@ -346,6 +375,7 @@ export const store = {
       todos: parsed.todos || [],
       inbox: parsed.inbox || [],
       shopping: parsed.shopping || [],
+      birthdays: parsed.birthdays || [],
       meta: parsed.meta || { createdAt: new Date().toISOString() },
     };
     persist();

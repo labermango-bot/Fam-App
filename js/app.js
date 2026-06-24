@@ -160,6 +160,30 @@ const relativeDay = (iso) => {
 const mapsUrl = (location) =>
   `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(location)}`;
 
+// --- Geburtstage (jährlich wiederkehrend) ---------------------------------
+const pad2 = (n) => String(n).padStart(2, "0");
+function birthdaysOnDate(iso) {
+  const [, m, d] = iso.split("-").map(Number);
+  return store.birthdays().filter((b) => b.month === m && b.day === d);
+}
+// Nächstes Vorkommen (dieses oder nächstes Jahr) ab fromISO.
+function nextBirthdayISO(b, fromISO) {
+  const fy = Number(fromISO.slice(0, 4));
+  let cand = `${fy}-${pad2(b.month)}-${pad2(b.day)}`;
+  if (cand < fromISO) cand = `${fy + 1}-${pad2(b.month)}-${pad2(b.day)}`;
+  return cand;
+}
+function birthdayAgeAt(b, occIso) {
+  return b.year ? Number(occIso.slice(0, 4)) - b.year : null;
+}
+// Anstehende Geburtstage innerhalb der nächsten withinDays Tage, sortiert.
+function upcomingBirthdays(fromISO, withinDays) {
+  return store.birthdays()
+    .map((b) => ({ b, iso: nextBirthdayISO(b, fromISO) }))
+    .filter((x) => daysFromToday(x.iso) <= withinDays)
+    .sort((a, z) => a.iso.localeCompare(z.iso));
+}
+
 // ---------------------------------------------------------------------------
 // Routing
 // ---------------------------------------------------------------------------
@@ -356,6 +380,25 @@ function renderToday(root) {
   weekSummary(events).forEach((s) => sumCard.append(el("div", { class: "summary-line" }, "• " + s)));
   sumSec.append(sumCard);
   root.append(sumSec);
+
+  // Geburtstage in den nächsten 14 Tagen
+  const soonBdays = upcomingBirthdays(todayISO(), 14);
+  if (soonBdays.length) {
+    const bSec = section("🎂 Geburtstage");
+    soonBdays.forEach(({ b, iso }) => {
+      const age = birthdayAgeAt(b, iso);
+      bSec.append(
+        el("a", { class: "list-row", href: "#calendar" },
+          el("span", { class: "cal-bday-lg" }, "🎂"),
+          el("div", { class: "list-main" },
+            el("div", { class: "list-title" }, b.name + (age != null ? ` (wird ${age})` : "")),
+            el("div", { class: "list-sub muted" }, relativeDay(iso) === "Heute" ? "🎉 Heute!" : `${relativeDay(iso)} · ${fmtDate(iso)}`),
+          ),
+        )
+      );
+    });
+    root.append(bSec);
+  }
 
   // Nächste Termine
   const sec = section("📅 Nächste Termine");
@@ -739,12 +782,14 @@ function renderCalendar(root) {
     const dayEvents = (eventsByDay[iso] || []).filter(passesFilter);
     const isToday = iso === todayISO();
     const holiday = holidayOn(iso);
+    const bdays = birthdaysOnDate(iso);
     const cell = el("div", {
       class: "cal-cell" + (isToday ? " today" : "") + (holiday ? " holiday" : ""),
-      title: holiday ? holiday.name : null,
+      title: holiday ? holiday.name : (bdays.length ? bdays.map((x) => x.name).join(", ") : null),
       onclick: () => openDayDialog(iso),
     },
       el("span", { class: "cal-day-num" }, String(day)),
+      bdays.length ? el("span", { class: "cal-bday" }, "🎂") : null,
       el("div", { class: "cal-dots" },
         ...dayEvents.slice(0, 4).map((e) => {
           const m = store.member((e.memberIds || [])[0]);
@@ -773,6 +818,32 @@ function renderCalendar(root) {
     });
     root.append(fSec);
   }
+
+  // Geburtstage (anstehend, jährlich wiederkehrend)
+  const bSec = section("🎂 Geburtstage");
+  const upBdays = upcomingBirthdays(todayISO(), 366);
+  if (!upBdays.length) {
+    bSec.append(el("p", { class: "muted small" }, "Noch keine Geburtstage eingetragen."));
+  } else {
+    upBdays.forEach(({ b, iso }) => {
+      const age = birthdayAgeAt(b, iso);
+      const m = b.memberId ? store.member(b.memberId) : null;
+      bSec.append(
+        el("div", { class: "list-row", onclick: () => openBirthdayDialog(b) },
+          el("span", { class: "cal-bday-lg" }, "🎂"),
+          el("div", { class: "list-main" },
+            el("div", { class: "list-title" }, b.name + (age != null ? ` (wird ${age})` : "")),
+            el("div", { class: "list-sub muted" },
+              `${fmtDate(iso)} · ${relativeDay(iso)}`,
+              m ? el("span", { class: "person-pill", style: `background:${m.color}` }, m.name) : null,
+            ),
+          ),
+        )
+      );
+    });
+  }
+  bSec.append(el("button", { class: "btn block", onclick: () => openBirthdayDialog() }, "+ Geburtstag hinzufügen"));
+  root.append(bSec);
 
   // Liste der Termine im Monat
   const monthEvents = store.events()
@@ -1381,6 +1452,55 @@ function openTodoDialog(existing = null, onSaved = null) {
   }
 
   openModal(isEdit ? "ToDo bearbeiten" : "Neues ToDo", body);
+}
+
+// ---------------------------------------------------------------------------
+// Dialog: Geburtstag
+// ---------------------------------------------------------------------------
+function openBirthdayDialog(existing = null) {
+  const isEdit = existing && existing.id;
+  const b = existing || { name: "", day: null, month: null, year: null, memberId: null };
+
+  const name = el("input", { class: "input", value: b.name || "", placeholder: "Name (z. B. Oma Erika)" });
+  // Datums-Eingabe: bei unbekanntem Jahr nehmen wir 2000 als Platzhalter.
+  const dateVal = b.month && b.day
+    ? `${b.year || 2000}-${pad2(b.month)}-${pad2(b.day)}`
+    : "";
+  const date = el("input", { class: "input", type: "date", value: dateVal });
+  const knowYear = el("input", { type: "checkbox" });
+  knowYear.checked = !!b.year;
+  const yearRow = el("label", { class: "row gap center" }, knowYear,
+    el("span", {}, "Geburtsjahr bekannt (Alter anzeigen)"));
+  const memberSel = el("select", { class: "input" },
+    el("option", { value: "", selected: !b.memberId }, "— keine Person —"),
+    ...store.members().map((m) => el("option", { value: m.id, selected: b.memberId === m.id }, m.name)));
+
+  const body = el("div", {},
+    field("Name", name),
+    field("Geburtstag", date),
+    field("", yearRow),
+    field("Verknüpfte Person (optional)", memberSel),
+    el("div", { class: "modal-actions" },
+      isEdit ? el("button", { class: "btn danger", onclick: () => { store.removeBirthday(b.id); closeModal(); } }, "Löschen") : null,
+      el("button", { class: "btn primary", onclick: save }, isEdit ? "Speichern" : "Hinzufügen"),
+    ),
+  );
+
+  function save() {
+    if (!name.value.trim()) { name.focus(); return; }
+    if (!date.value) { date.focus(); return; }
+    const [y, m, d] = date.value.split("-").map(Number);
+    const data = {
+      name: name.value.trim(), day: d, month: m,
+      year: knowYear.checked ? y : null,
+      memberId: memberSel.value || null,
+    };
+    if (isEdit) store.updateBirthday(b.id, data);
+    else store.addBirthday(data);
+    closeModal();
+  }
+
+  openModal(isEdit ? "Geburtstag bearbeiten" : "Neuer Geburtstag", body);
 }
 
 // ---------------------------------------------------------------------------
