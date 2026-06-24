@@ -84,6 +84,16 @@ function currentTab() {
 window.addEventListener("hashchange", render);
 store.subscribe(render);
 
+// Einfacher iOS-Kurzbefehl-Weg: Der Kurzbefehl kopiert den geteilten Text in
+// die Zwischenablage und öffnet die App mit ?import=1. Die App zeigt dann im
+// Posteingang einen Knopf, der den Text aus der Zwischenablage übernimmt
+// (Lesen der Zwischenablage braucht eine Nutzer-Geste = Knopfdruck).
+let pendingClipboardImport = new URLSearchParams(location.search).get("import") === "1";
+if (pendingClipboardImport) {
+  history.replaceState(null, "", location.pathname);
+  if (currentTab() !== "inbox") location.hash = "#inbox";
+}
+
 // ---------------------------------------------------------------------------
 // Render-Einstieg
 // ---------------------------------------------------------------------------
@@ -216,6 +226,28 @@ function renderInbox(root) {
     "Elternbriefen oder Post. Per KI automatisch erkennen lassen oder in Ruhe selbst umwandeln.");
   root.append(intro);
 
+  // Über den iOS-Kurzbefehl geöffnet (?import=1): geteilten Text aus der
+  // Zwischenablage übernehmen. Der Knopfdruck liefert die nötige Nutzer-Geste,
+  // damit Safari die Zwischenablage lesen darf.
+  if (pendingClipboardImport) {
+    const importCard = el("div", { class: "card" },
+      el("p", { class: "hint" }, "📤 Aus dem Teilen-Menü erhalten. Tippe, um den geteilten Text zu übernehmen:"),
+      el("button", { class: "btn primary block", onclick: async () => {
+        try {
+          const clip = await navigator.clipboard.readText();
+          pendingClipboardImport = false;
+          const t = (clip || "").trim();
+          if (!t) { alert("Die Zwischenablage ist leer."); render(); return; }
+          if (aiConfigured()) runCapture({ text: t, source: "whatsapp" });
+          else { store.addInbox(t, "whatsapp"); render(); }
+        } catch (err) {
+          alert("Zwischenablage konnte nicht gelesen werden. Bitte den Text unten manuell einfügen.");
+        }
+      }}, "📋 Geteilten Text übernehmen & analysieren"),
+    );
+    root.append(importCard);
+  }
+
   const text = el("textarea", { class: "input", rows: "3", placeholder: "z. B. „Mittwoch Sportzeug für Lea“ oder Text aus WhatsApp einfügen…" });
   const addBtn = el("button", { class: "btn", onclick: () => {
     const t = text.value.trim();
@@ -224,9 +256,11 @@ function renderInbox(root) {
     text.value = "";
   }}, "In Posteingang");
 
-  // Ohne "capture" zeigt iOS beim Antippen die Auswahl Fotomediathek /
-  // Foto aufnehmen / Datei – so lassen sich auch vorhandene Screenshots
-  // anhängen (mit capture="environment" ginge nur die Live-Kamera).
+  // Datei-Feld in ein <label> einwickeln statt fileInput.click() aufzurufen:
+  // Das programmatische .click() auf ein verstecktes Feld ist auf iOS
+  // unzuverlässig; das native Label öffnet die Auswahl Fotomediathek /
+  // Foto aufnehmen / Datei zuverlässig. Ohne "capture" gibt es die volle
+  // Auswahl (mit capture="environment" ginge nur die Live-Kamera).
   const fileInput = el("input", {
     type: "file", accept: "image/*", style: "display:none",
     onchange: (ev) => {
@@ -235,7 +269,7 @@ function renderInbox(root) {
       if (file) runCapture({ file, source: "other" });
     },
   });
-  const photoBtn = el("button", { class: "btn primary", type: "button", onclick: () => fileInput.click() }, "✨📷 Foto/Screenshot → KI");
+  const photoBtn = el("label", { class: "btn primary" }, "✨📷 Foto/Screenshot → KI", fileInput);
   const aiBtn = el("button", { class: "btn primary", type: "button", onclick: () => {
     const t = text.value.trim();
     if (!t) return;
@@ -244,7 +278,7 @@ function renderInbox(root) {
   }}, "✨ KI: Text erkennen");
 
   const captureCard = el("div", { class: "card capture" }, text,
-    el("div", { class: "row gap wrap" }, photoBtn, aiBtn, addBtn), fileInput);
+    el("div", { class: "row gap wrap" }, photoBtn, aiBtn, addBtn));
   // Screenshots/Bilder lassen sich auch direkt ins Textfeld einfügen (Strg/Cmd+V).
   text.addEventListener("paste", (ev) => {
     const item = [...(ev.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
