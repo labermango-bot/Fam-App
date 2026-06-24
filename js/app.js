@@ -621,20 +621,44 @@ function viewToggle() {
   return el("div", { class: "seg-row" }, mk("month", "Monat"), mk("week", "Woche"));
 }
 
+// Navigationszeile mit ‹ Titel › und einem „Heute"-Rücksprung.
+function calNav(label, onPrev, onNext) {
+  return el("div", { class: "cal-nav" },
+    el("button", { class: "icon-btn", onclick: onPrev }, "‹"),
+    el("div", { class: "cal-month" }, label),
+    el("button", { class: "icon-btn", onclick: onNext }, "›"),
+    el("button", { class: "btn small cal-today", onclick: () => { calCursor = todayISO(); render(); } }, "Heute"),
+  );
+}
+
+// Horizontales Wischen erkennen (ohne vertikales Scrollen zu stören).
+function attachSwipe(node, onSwipeLeft, onSwipeRight) {
+  let x0 = null, y0 = null;
+  node.addEventListener("touchstart", (e) => {
+    const t = e.changedTouches[0]; x0 = t.clientX; y0 = t.clientY;
+  }, { passive: true });
+  node.addEventListener("touchend", (e) => {
+    if (x0 == null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - x0, dy = t.clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      (dx < 0 ? onSwipeLeft : onSwipeRight)();
+    }
+  }, { passive: true });
+}
+
 function renderCalendar(root) {
   root.append(viewToggle());
   if (calView === "week") return renderWeek(root);
+
+  attachSwipe(root, () => shiftMonth(1), () => shiftMonth(-1));
 
   const cursor = parseISO(calCursor);
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
 
-  const nav = el("div", { class: "cal-nav" },
-    el("button", { class: "icon-btn", onclick: () => shiftMonth(-1) }, "‹"),
-    el("div", { class: "cal-month" }, `${MONTHS[month]} ${year}`),
-    el("button", { class: "icon-btn", onclick: () => shiftMonth(1) }, "›"),
-  );
-  root.append(nav);
+  root.append(calNav(`${MONTHS[month]} ${year}`, () => shiftMonth(-1), () => shiftMonth(1)));
 
   // Personen-Filter (Chips)
   root.append(renderMemberFilter());
@@ -713,12 +737,10 @@ function renderWeek(root) {
   }
   const sunday = days[6];
 
-  const nav = el("div", { class: "cal-nav" },
-    el("button", { class: "icon-btn", onclick: () => shiftWeek(-1) }, "‹"),
-    el("div", { class: "cal-month" }, `${parseISO(monday).getDate()}. ${MONTHS[parseISO(monday).getMonth()]} – ${parseISO(sunday).getDate()}. ${MONTHS[parseISO(sunday).getMonth()]}`),
-    el("button", { class: "icon-btn", onclick: () => shiftWeek(1) }, "›"),
-  );
-  root.append(nav);
+  attachSwipe(root, () => shiftWeek(1), () => shiftWeek(-1));
+
+  const label = `${parseISO(monday).getDate()}. ${MONTHS[parseISO(monday).getMonth()]} – ${parseISO(sunday).getDate()}. ${MONTHS[parseISO(sunday).getMonth()]}`;
+  root.append(calNav(label, () => shiftWeek(-1), () => shiftWeek(1)));
   root.append(renderMemberFilter());
 
   const eventsByDay = groupEventsByDate();
