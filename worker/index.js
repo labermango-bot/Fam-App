@@ -110,17 +110,69 @@ Wenn im Inhalt mehrere Termine/ToDos stehen, gib mehrere items zurück. Wenn nic
         { role: "user", content: userContent },
       ],
       max_tokens: 1024,
+      temperature: 0.1,
+      // Bindet die Ausgabe an ein festes JSON-Schema, damit die Antwort
+      // garantiert maschinenlesbar ist (kein Markdown/Fließtext drumherum).
+      guided_json: RESULT_SCHEMA,
     });
   } catch (err) {
     return json({ error: `Workers-AI-Fehler: ${err && err.message ? err.message : err}` }, 502);
   }
 
   const raw = String((aiRes && aiRes.response) || "").trim();
-  const parsed = extractJSON(raw);
-  if (!parsed || !Array.isArray(parsed.items)) {
+  const items = normalizeItems(extractJSON(raw));
+  if (!items) {
     return json({ error: "KI-Antwort konnte nicht ausgewertet werden.", raw }, 502);
   }
-  return json({ items: parsed.items });
+  return json({ items });
+}
+
+// JSON-Schema für guided_json: erzwingt die {items:[…]}-Struktur.
+const RESULT_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["event", "todo"] },
+          title: { type: "string" },
+          date: { type: "string" },
+          time: { type: "string" },
+          endTime: { type: "string" },
+          location: { type: "string" },
+          notes: { type: "string" },
+          reminderLeadMinutes: { type: "number" },
+          due: { type: "string" },
+          priority: { type: "string", enum: ["low", "normal", "high"] },
+          prepTodos: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                leadDays: { type: "number" },
+              },
+              required: ["title", "leadDays"],
+            },
+          },
+        },
+        required: ["kind", "title"],
+      },
+    },
+  },
+  required: ["items"],
+};
+
+// Akzeptiert sowohl {items:[…]} als auch ein nacktes Array oder ein
+// einzelnes Item-Objekt und gibt immer ein Array (oder null) zurück.
+function normalizeItems(parsed) {
+  if (!parsed) return null;
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed.items)) return parsed.items;
+  if (parsed.kind && parsed.title) return [parsed];
+  return null;
 }
 
 function extractJSON(text) {
