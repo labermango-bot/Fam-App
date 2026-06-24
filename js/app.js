@@ -36,6 +36,7 @@ const SOURCE_LABELS = {
   other: "📌 Sonstiges",
   manual: "✍️ Manuell",
   ai: "✨ KI-Erkennung",
+  prep: "🧩 Vorbereitung",
 };
 
 const todayISO = () => {
@@ -218,7 +219,7 @@ function renderInbox(root) {
   const text = el("textarea", { class: "input", rows: "3", placeholder: "z. B. „Mittwoch Sportzeug für Lea“ oder Text aus WhatsApp einfügen…" });
   const sourceSel = el("select", { class: "input" },
     ...Object.entries(SOURCE_LABELS)
-      .filter(([k]) => k !== "manual" && k !== "ai")
+      .filter(([k]) => k !== "manual" && k !== "ai" && k !== "prep")
       .map(([k, v]) => el("option", { value: k }, v)),
   );
   const addBtn = el("button", { class: "btn", onclick: () => {

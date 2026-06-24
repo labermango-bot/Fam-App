@@ -1,6 +1,6 @@
 // sw.js — einfacher Service Worker für Offline-Betrieb.
 // Cache-First für die App-Hülle, damit FamOrga auch ohne Netz startet.
-const CACHE = "famorga-v3";
+const CACHE = "famorga-v4";
 const ASSETS = [
   "./",
   "./index.html",

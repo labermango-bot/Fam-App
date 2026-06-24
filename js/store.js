@@ -14,6 +14,61 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// Verschiebt ein ISO-Datum ("YYYY-MM-DD") um deltaDays Tage (UTC, ohne
+// Zeitzonen-Verschiebung). Negatives delta = früheres Datum.
+function shiftISODate(iso, deltaDays) {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00Z");
+  if (isNaN(d.getTime())) return "";
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function makeTodo(data) {
+  return {
+    id: uid(),
+    title: data.title || "Neues ToDo",
+    memberId: data.memberId || null,
+    due: data.due || "",
+    done: data.done || false,
+    priority: data.priority || "normal", // low | normal | high
+    notes: data.notes || "",
+    source: data.source || "manual",
+    eventId: data.eventId || null,   // verknüpfter Termin (bei Vorbereitungs-ToDos)
+    prepId: data.prepId || null,     // verknüpfter Vorbereitungs-Schritt
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// Hält für jeden Vorbereitungs-Schritt eines Termins ein verknüpftes ToDo
+// mit Zieldatum (Termindatum minus Vorlaufzeit) aktuell. Wird bei jedem
+// Anlegen/Ändern eines Termins aufgerufen. Mutiert state.todos direkt; der
+// Aufrufer ist fürs persist() zuständig.
+function reconcilePrepTodos(event) {
+  const prep = (event.prep || []).filter((p) => (p.text || "").trim());
+  const wantedIds = new Set(prep.map((p) => p.id));
+  // Verwaiste Vorbereitungs-ToDos dieses Termins entfernen.
+  state.todos = state.todos.filter(
+    (t) => !(t.eventId === event.id && t.prepId && !wantedIds.has(t.prepId))
+  );
+  const memberId = (event.memberIds || [])[0] || null;
+  prep.forEach((p) => {
+    const due = shiftISODate(event.date, -(p.leadDays || 0));
+    const existing = state.todos.find((t) => t.eventId === event.id && t.prepId === p.id);
+    if (existing) {
+      existing.title = p.text.trim();
+      existing.due = due;
+      existing.done = !!p.done;
+      if (!existing.memberId) existing.memberId = memberId;
+    } else {
+      state.todos.push(makeTodo({
+        title: p.text.trim(), due, memberId, done: !!p.done,
+        source: "prep", eventId: event.id, prepId: p.id,
+      }));
+    }
+  });
+}
+
 function seedState() {
   // Erststart: eine Familie mit Eltern + vier Kindern als Platzhalter.
   const names = ["Mama", "Papa", "Kind 1", "Kind 2", "Kind 3", "Kind 4"];
@@ -125,16 +180,22 @@ export const store = {
       createdAt: new Date().toISOString(),
     };
     state.events.push(e);
+    reconcilePrepTodos(e);
     persist();
     return e;
   },
   updateEvent(id, patch) {
     const e = store.event(id);
-    if (e) Object.assign(e, patch);
+    if (e) {
+      Object.assign(e, patch);
+      reconcilePrepTodos(e);
+    }
     persist();
   },
   removeEvent(id) {
     state.events = state.events.filter((e) => e.id !== id);
+    // Verknüpfte Vorbereitungs-ToDos mit entfernen.
+    state.todos = state.todos.filter((t) => t.eventId !== id);
     persist();
   },
   togglePrep(eventId, prepId) {
@@ -142,6 +203,9 @@ export const store = {
     const p = e && e.prep.find((x) => x.id === prepId);
     if (p) {
       p.done = !p.done;
+      // Verknüpftes ToDo synchron halten.
+      const linked = state.todos.find((t) => t.eventId === eventId && t.prepId === prepId);
+      if (linked) linked.done = p.done;
       persist();
     }
   },
@@ -149,6 +213,7 @@ export const store = {
     const e = store.event(eventId);
     if (e) {
       e.prep.push({ id: uid(), text, done: false, leadDays });
+      reconcilePrepTodos(e);
       persist();
     }
   },
@@ -156,6 +221,7 @@ export const store = {
     const e = store.event(eventId);
     if (e) {
       e.prep = e.prep.filter((p) => p.id !== prepId);
+      state.todos = state.todos.filter((t) => !(t.eventId === eventId && t.prepId === prepId));
       persist();
     }
   },
@@ -165,17 +231,7 @@ export const store = {
     return state.todos;
   },
   addTodo(data) {
-    const t = {
-      id: uid(),
-      title: data.title || "Neues ToDo",
-      memberId: data.memberId || null,
-      due: data.due || "",
-      done: false,
-      priority: data.priority || "normal", // low | normal | high
-      notes: data.notes || "",
-      source: data.source || "manual",
-      createdAt: new Date().toISOString(),
-    };
+    const t = makeTodo(data);
     state.todos.push(t);
     persist();
     return t;
@@ -189,6 +245,12 @@ export const store = {
     const t = state.todos.find((x) => x.id === id);
     if (t) {
       t.done = !t.done;
+      // Falls aus einem Termin-Vorbereitungsschritt: dort synchron abhaken.
+      if (t.eventId && t.prepId) {
+        const e = store.event(t.eventId);
+        const p = e && (e.prep || []).find((x) => x.id === t.prepId);
+        if (p) p.done = t.done;
+      }
       persist();
     }
   },
