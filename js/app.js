@@ -3,6 +3,7 @@ import { store } from "./store.js";
 import { buildICS, downloadICS } from "./ics.js";
 import { classifyCapture, aiConfigured, fileToDataURL } from "./ai.js";
 import { initSync, feedUrl } from "./sync.js";
+import { holidayOn, upcomingHolidays } from "./ferien-bw.js";
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -626,7 +627,12 @@ function renderCalendar(root) {
     const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const dayEvents = (eventsByDay[iso] || []).filter(passesFilter);
     const isToday = iso === todayISO();
-    const cell = el("div", { class: "cal-cell" + (isToday ? " today" : ""), onclick: () => openDayDialog(iso) },
+    const holiday = holidayOn(iso);
+    const cell = el("div", {
+      class: "cal-cell" + (isToday ? " today" : "") + (holiday ? " holiday" : ""),
+      title: holiday ? holiday.name : null,
+      onclick: () => openDayDialog(iso),
+    },
       el("span", { class: "cal-day-num" }, String(day)),
       el("div", { class: "cal-dots" },
         ...dayEvents.slice(0, 4).map((e) => {
@@ -638,6 +644,24 @@ function renderCalendar(root) {
     grid.append(cell);
   }
   root.append(grid);
+
+  // Schulferien Baden-Württemberg (kommende + laufende)
+  const holidays = upcomingHolidays(todayISO(), 4);
+  if (holidays.length) {
+    const fSec = section("🏖 Schulferien (BW)");
+    holidays.forEach((h) => {
+      const running = todayISO() >= h.start && todayISO() <= h.end;
+      fSec.append(
+        el("div", { class: "list-row" },
+          el("div", { class: "list-main" },
+            el("div", { class: "list-title" }, h.name + (running ? "  · läuft" : "")),
+            el("div", { class: "list-sub muted" }, `${fmtDate(h.start)} – ${fmtDate(h.end)}`),
+          ),
+        )
+      );
+    });
+    root.append(fSec);
+  }
 
   // Liste der Termine im Monat
   const monthEvents = store.events()

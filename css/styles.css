@@ -201,7 +201,9 @@ select.input { -webkit-appearance: none; appearance: none; }
 .cal-dow { text-align: center; font-size: 11px; font-weight: 600; color: var(--muted); padding-bottom: 4px; }
 .cal-cell { aspect-ratio: 1; border-radius: 10px; padding: 4px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 14px; }
 .cal-cell.empty { visibility: hidden; }
+.cal-cell.holiday { background: color-mix(in srgb, #30d158 18%, var(--card)); }
 .cal-cell.today { background: var(--tint); color: #fff; }
+.cal-cell.today.holiday { background: var(--tint); }
 .cal-cell.today .cal-day-num { font-weight: 700; }
 .cal-dots { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .dot { width: 6px; height: 6px; border-radius: 50%; }
