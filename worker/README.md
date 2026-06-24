@@ -5,32 +5,22 @@ Backend zur App. Er macht zwei Dinge, die eine rein lokale App nicht
 sicher selbst kann:
 
 1. **KI-Erkennung** (`/classify`): nimmt Foto/Screenshot/Text entgegen und
-   lässt Google Gemini daraus Termine/ToDos extrahieren. Der Gemini-API-Key
-   liegt nur hier auf dem Server, nie im Browser.
+   lässt ein Vision-Modell über **Cloudflare Workers AI** daraus
+   Termine/ToDos extrahieren. Workers AI läuft direkt im Cloudflare-Konto —
+   kein externer API-Key, kein zweiter Account, keine Kreditkarte nötig.
 2. **Kalender-Abo** (`/sync` + `/feed.ics`): spiegelt eure Termine in einen
    kleinen Speicher (Cloudflare KV), damit iOS sie als automatisch
    aktualisiertes Abo-Kalender abonnieren kann.
 
 Beides läuft im kostenlosen Rahmen: Cloudflare-Free-Tier (100.000
-Requests/Tag) und Googles kostenloses Gemini-Kontingent (Stand heute z. B.
-Gemini 2.0 Flash mit großzügigem Tageslimit) – für eine Familie bei weitem
-ausreichend, ohne Kreditkarte oder Zahlungsdaten.
+Requests/Tag für den Worker, 10.000 KI-„Neuronen"/Tag für Workers AI) – für
+eine Familie bei weitem ausreichend, ohne Kreditkarte oder Zahlungsdaten.
 
-## Kostenlosen Gemini-API-Key erstellen
-
-Ein **API-Key** ist hier nötig (kein "Abo", keine Zahlungsdaten) – einfach
-ein kostenloser Zugangsschlüssel für Googles KI:
-
-1. [aistudio.google.com/apikey](https://aistudio.google.com/apikey) öffnen,
-   mit Google-Konto anmelden.
-2. „Create API key" klicken, Key kopieren.
-3. Den Key gleich unten bei „Secrets setzen" verwenden.
-
-Wichtig zur Sicherheit: Dieser Key wird **nie** in eine Datei im Repo
-geschrieben, auch nicht in `wrangler.toml`. Der Befehl `wrangler secret put`
-lädt ihn direkt verschlüsselt zu Cloudflare hoch – im (öffentlichen!)
-GitHub-Repo steht nur der Worker-*Code*, der den Key zur Laufzeit aus einer
-Umgebungsvariable liest, niemals der Key selbst.
+> Hinweis: Zuvor nutzte dieses Projekt Google Gemini als KI-Backend. Google
+> verlangt inzwischen für Nutzer in der EU/EWR eine hinterlegte Kreditkarte,
+> auch für das kostenlose Kontingent (Fehler „429 quota exceeded, limit 0").
+> Deshalb läuft die KI-Erkennung jetzt über Workers AI — bleibt im selben
+> Cloudflare-Konto und braucht keinen separaten Schlüssel.
 
 ## Einmalige Einrichtung
 
@@ -45,10 +35,11 @@ wrangler login                 # öffnet den Browser, mit Cloudflare-Konto anmel
 wrangler kv namespace create FAMORGA_KV
 # -> gibt eine "id" aus, die in wrangler.toml bei [[kv_namespaces]] eingetragen werden muss
 
-# Secrets setzen (werden verschlüsselt bei Cloudflare gespeichert, NIE im Code):
-wrangler secret put GEMINI_API_KEY
-# -> kostenlosen Gemini-API-Key von aistudio.google.com/apikey einfügen
+# Workers-AI-Bindung ist in wrangler.toml schon als [ai] binding = "AI"
+# eingetragen — kein Secret und kein API-Key nötig.
 
+# Nur dieses eine Secret setzen (wird verschlüsselt bei Cloudflare
+# gespeichert, NIE im Code):
 wrangler secret put SYNC_TOKEN
 # -> einen frei erfundenen, langen Code eingeben, z. B. 32 zufällige Zeichen.
 #    Diesen Code braucht ihr (du + deine Frau) später in der App unter

@@ -2,9 +2,9 @@
 //
 // Aufgaben:
 //  1. POST /classify  — nimmt Foto/Screenshot (Base64) oder Text entgegen,
-//     fragt Claude (Anthropic API) und gibt strukturierte Termin-/ToDo-
-//     Vorschläge als JSON zurück. Hält den Anthropic-API-Key serverseitig,
-//     damit er nicht im öffentlichen Frontend-Code stehen muss.
+//     fragt ein Vision-Modell über die Cloudflare-Workers-AI-Bindung und
+//     gibt strukturierte Termin-/ToDo-Vorschläge als JSON zurück. Workers AI
+//     läuft direkt im Cloudflare-Konto — kein separater API-Key nötig.
 //  2. POST /sync      — Spiegelt Termine/Mitglieder in KV, damit ein
 //     Kalender-Abo (Schritt 3) immer den aktuellen Stand zeigen kann.
 //  3. GET  /feed.ics  — liefert die zuletzt gesyncten Termine als .ics-Feed,
@@ -62,7 +62,7 @@ export default {
 // ---------------------------------------------------------------------------
 async function handleClassify(req, env) {
   if (!checkToken(req, env)) return json({ error: "Ungültiger Zugangscode." }, 401);
-  if (!env.GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY ist auf dem Worker nicht gesetzt." }, 500);
+  if (!env.AI) return json({ error: "Workers AI ist auf dem Worker nicht gebunden (Bindung 'AI' fehlt)." }, 500);
 
   const body = await req.json();
   const { image, mediaType, text } = body || {};
@@ -71,7 +71,7 @@ async function handleClassify(req, env) {
   const today = new Date().toISOString().slice(0, 10);
   const system = `Du hilfst einer Familie, Termine und ToDos aus Fotos, Screenshots oder Text zu erkennen.
 Heutiges Datum: ${today} (Format YYYY-MM-DD).
-Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, keine Erklärungen, kein Markdown, kein Codeblock.
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, keine Erklärungen, kein Markdown, kein Codeblock, kein Text davor oder danach.
 Format:
 {"items":[
   {
@@ -90,36 +90,32 @@ Format:
 ]}
 Wenn im Inhalt mehrere Termine/ToDos stehen, gib mehrere items zurück. Wenn nichts Sinnvolles erkennbar ist, gib {"items":[]} zurück.`;
 
-  const parts = [];
+  const userContent = [];
   if (image) {
-    parts.push({ inline_data: { mime_type: mediaType || "image/jpeg", data: image } });
+    userContent.push({ type: "image_url", image_url: { url: `data:${mediaType || "image/jpeg"};base64,${image}` } });
   }
-  parts.push({
+  userContent.push({
+    type: "text",
     text: text
       ? `Text:\n${text}`
       : "Erkenne Termine/ToDos in diesem Bild (Einladung, Elternbrief, Screenshot o.ä.).",
   });
 
-  const model = env.GEMINI_MODEL || "gemini-2.0-flash";
-  const aiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents: [{ role: "user", parts }],
-        generationConfig: { responseMimeType: "application/json" },
-      }),
-    }
-  );
-
-  if (!aiRes.ok) {
-    const errText = await aiRes.text();
-    return json({ error: `Gemini API Fehler: ${errText}` }, 502);
+  const model = env.AI_MODEL || "@cf/meta/llama-3.2-11b-vision-instruct";
+  let aiRes;
+  try {
+    aiRes = await env.AI.run(model, {
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userContent },
+      ],
+      max_tokens: 1024,
+    });
+  } catch (err) {
+    return json({ error: `Workers-AI-Fehler: ${err && err.message ? err.message : err}` }, 502);
   }
-  const aiJson = await aiRes.json();
-  const raw = (aiJson.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+
+  const raw = String((aiRes && aiRes.response) || "").trim();
   const parsed = extractJSON(raw);
   if (!parsed || !Array.isArray(parsed.items)) {
     return json({ error: "KI-Antwort konnte nicht ausgewertet werden.", raw }, 502);

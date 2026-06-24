@@ -3,21 +3,22 @@
 Diese Anleitung richtet das Backend (KI-Erkennung + Kalender-Abo) komplett
 über die Cloudflare-Webseite ein. Funktioniert auch vom iPhone/iPad.
 
-> **Sicherheits-Grundregel:** Der Gemini-API-Key und der Zugangscode kommen
-> **nur** in die Cloudflare-Oberfläche (verschlüsselt). Niemals in eine Datei,
-> niemals ins GitHub-Repo, niemals in einen Chat. Falls ein Key doch mal
-> irgendwo sichtbar war: in Google AI Studio löschen und neu erstellen.
+> **Sicherheits-Grundregel:** Der Zugangscode kommt **nur** in die
+> Cloudflare-Oberfläche (verschlüsselt). Niemals in eine Datei, niemals ins
+> GitHub-Repo, niemals in einen Chat.
 
 ---
 
 ## Was du vorbereitet brauchst
 
-1. **Gemini-API-Key** von [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-   („Create API key“, sieht aus wie `AIza…`). Nur dein Google-Konto nötig.
-2. **Zugangscode** (frei erfunden, lang & zufällig) — schützt deinen Worker,
+1. **Zugangscode** (frei erfunden, lang & zufällig) — schützt deinen Worker,
    damit ihn nicht Fremde benutzen. Du bekommst von mir im Chat einen
    Vorschlag, oder denk dir selbst ~25 zufällige Zeichen aus.
-3. **Cloudflare-Konto** (kostenlos): [dash.cloudflare.com](https://dash.cloudflare.com) → registrieren.
+2. **Cloudflare-Konto** (kostenlos): [dash.cloudflare.com](https://dash.cloudflare.com) → registrieren.
+
+Ein externer KI-API-Key wird **nicht** benötigt: Die KI-Erkennung läuft über
+**Cloudflare Workers AI**, das im selben kostenlosen Cloudflare-Konto läuft
+(10.000 KI-„Neuronen“/Tag kostenlos, keine Kreditkarte nötig).
 
 ---
 
@@ -48,18 +49,20 @@ Diese Anleitung richtet das Backend (KI-Erkennung + Kalender-Abo) komplett
    - **Variable name:** muss exakt **`FAMORGA_KV`** heißen (genau so).
    - **KV namespace:** den eben erstellten (`famorga-kv`) auswählen.
 3. Speichern.
+4. Noch einmal **„Add binding“**, diesmal Typ **„Workers AI“** wählen:
+   - **Variable name:** muss exakt **`AI`** heißen (genau so).
+   - Kein Auswahl-Namespace nötig — einfach speichern.
 
-## Schritt 5: Key und Zugangscode hinterlegen
+## Schritt 5: Zugangscode hinterlegen
 
-Immer noch unter **„Settings“ → „Variables and Secrets“** → **„Add“**:
+Unter **„Settings“ → „Variables and Secrets“** → **„Add“**:
 
 | Name | Wert | Typ |
 |---|---|---|
-| `GEMINI_API_KEY` | dein **neuer** Gemini-Key (`AIza…`) | **Secret** (verschlüsselt) |
 | `SYNC_TOKEN` | dein Zugangscode | **Secret** (verschlüsselt) |
-| `GEMINI_MODEL` | `gemini-2.0-flash` | Text (optional, sonst Standard) |
 
-Danach **„Deploy“ / Speichern**, damit alles aktiv wird.
+Ein API-Key ist hier **nicht** nötig — die KI läuft über die `AI`-Bindung
+aus Schritt 4. Danach **„Deploy“ / Speichern** klicken, damit alles aktiv wird.
 
 ## Schritt 6: Worker-Adresse holen
 

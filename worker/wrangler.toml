@@ -2,10 +2,14 @@ name = "famorga-api"
 main = "index.js"
 compatibility_date = "2024-11-01"
 
-# Modell für die KI-Erkennung (Vision-fähig, Google Gemini kostenloses
-# Kontingent). Kann ohne Code-Änderung angepasst werden.
-[vars]
-GEMINI_MODEL = "gemini-2.0-flash"
+# Workers AI für die KI-Erkennung (Vision-Modell, läuft direkt im
+# Cloudflare-Konto, kostenloses Tageskontingent, kein separater API-Key).
+[ai]
+binding = "AI"
+
+# Optional: anderes Modell verwenden, ohne Code zu ändern.
+# [vars]
+# AI_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct"
 
 # KV-Namespace zum Spiegeln der Termine für den .ics-Kalender-Feed.
 # Erst anlegen mit: npx wrangler kv namespace create FAMORGA_KV
