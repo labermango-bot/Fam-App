@@ -614,6 +614,9 @@ function renderFamily(root) {
       el("input", { type: "file", accept: ".json", style: "display:none", onchange: importBackup }),
     ),
   );
+  if (store.hasRecovery()) {
+    tools.append(el("button", { class: "btn block danger", onclick: restoreRecovery }, "↩️ Letzten Stand wiederherstellen (vor Import)"));
+  }
   root.append(tools);
 
   root.append(renderAISettings());
@@ -908,12 +911,22 @@ function exportBackup() {
 function importBackup(ev) {
   const file = ev.target.files[0];
   if (!file) return;
+  const proceed = confirm(
+    "Dies ersetzt ALLE aktuellen Daten (Termine, ToDos, Mitglieder, Posteingang) durch den Inhalt dieser Sicherungsdatei. Der bisherige Stand wird vorher als Wiederherstellungspunkt gesichert, falls das ein Versehen ist. Fortfahren?"
+  );
+  ev.target.value = "";
+  if (!proceed) return;
   const reader = new FileReader();
   reader.onload = () => {
     try { store.importJSON(reader.result); alert("Sicherung importiert."); }
     catch (err) { alert("Datei konnte nicht gelesen werden."); }
   };
   reader.readAsText(file);
+}
+function restoreRecovery() {
+  if (!confirm("Letzten Stand (von vor dem letzten Import) wiederherstellen?")) return;
+  if (store.restoreRecovery()) alert("Wiederherstellt.");
+  else alert("Kein Wiederherstellungspunkt vorhanden.");
 }
 
 // ---------------------------------------------------------------------------

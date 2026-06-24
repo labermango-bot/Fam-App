@@ -4,6 +4,7 @@
 // und auf einem anderen Gerät wieder importieren.
 
 const STORAGE_KEY = "famorga.v1";
+const RECOVERY_KEY = "famorga.v1.recovery";
 
 const DEFAULT_COLORS = [
   "#0a84ff", "#ff375f", "#30d158", "#ff9f0a",
@@ -286,6 +287,10 @@ export const store = {
   },
   importJSON(json) {
     const parsed = JSON.parse(json);
+    // Sicherheitsnetz: den bisherigen Stand separat aufheben, bevor er
+    // überschrieben wird — falls der Import ein Versehen war, lässt sich
+    // damit der Zustand von direkt davor wiederherstellen.
+    try { localStorage.setItem(RECOVERY_KEY, JSON.stringify(state)); } catch (e) {}
     state = {
       members: parsed.members || [],
       events: parsed.events || [],
@@ -294,6 +299,17 @@ export const store = {
       meta: parsed.meta || { createdAt: new Date().toISOString() },
     };
     persist();
+  },
+  hasRecovery() {
+    return Boolean(localStorage.getItem(RECOVERY_KEY));
+  },
+  restoreRecovery() {
+    const raw = localStorage.getItem(RECOVERY_KEY);
+    if (!raw) return false;
+    state = JSON.parse(raw);
+    localStorage.removeItem(RECOVERY_KEY);
+    persist();
+    return true;
   },
   setMeta(patch) {
     Object.assign(state.meta, patch);
