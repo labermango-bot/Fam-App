@@ -84,6 +84,7 @@ function seedState() {
     events: [],
     todos: [],
     inbox: [],
+    shopping: [],
     meta: { createdAt: new Date().toISOString(), onboarded: false },
   };
 }
@@ -102,6 +103,7 @@ function load() {
       events: parsed.events || [],
       todos: parsed.todos || [],
       inbox: parsed.inbox || [],
+      shopping: parsed.shopping || [],
       meta: parsed.meta || { createdAt: new Date().toISOString() },
     };
   } catch (e) {
@@ -283,6 +285,35 @@ export const store = {
     persist();
   },
 
+  // --- Einkaufsliste ------------------------------------------------------
+  shopping() {
+    return state.shopping;
+  },
+  // Nimmt einen Text (z. B. aus WhatsApp) und legt pro Zeile / pro durch
+  // Komma getrenntem Eintrag einen abhakbaren Artikel an. Gibt die Anzahl
+  // der hinzugefügten Artikel zurück.
+  addShopping(text) {
+    const items = String(text || "")
+      .split(/[\n,;]+/)
+      .map((s) => s.replace(/^[\s\-*•·–]+/, "").trim()) // Aufzählungszeichen entfernen
+      .filter(Boolean);
+    items.forEach((t) => state.shopping.push({ id: uid(), text: t, done: false, createdAt: new Date().toISOString() }));
+    if (items.length) persist();
+    return items.length;
+  },
+  toggleShopping(id) {
+    const i = state.shopping.find((x) => x.id === id);
+    if (i) { i.done = !i.done; persist(); }
+  },
+  removeShopping(id) {
+    state.shopping = state.shopping.filter((i) => i.id !== id);
+    persist();
+  },
+  clearCheckedShopping() {
+    state.shopping = state.shopping.filter((i) => !i.done);
+    persist();
+  },
+
   // --- Import / Export ----------------------------------------------------
   exportJSON() {
     return JSON.stringify(state, null, 2);
@@ -298,6 +329,7 @@ export const store = {
       events: parsed.events || [],
       todos: parsed.todos || [],
       inbox: parsed.inbox || [],
+      shopping: parsed.shopping || [],
       meta: parsed.meta || { createdAt: new Date().toISOString() },
     };
     persist();

@@ -133,13 +133,15 @@ window.addEventListener("hashchange", render);
 store.subscribe(render);
 
 // Einfacher iOS-Kurzbefehl-Weg: Der Kurzbefehl kopiert den geteilten Text in
-// die Zwischenablage und öffnet die App mit ?import=1. Die App zeigt dann im
-// Posteingang einen Knopf, der den Text aus der Zwischenablage übernimmt
-// (Lesen der Zwischenablage braucht eine Nutzer-Geste = Knopfdruck).
-let pendingClipboardImport = new URLSearchParams(location.search).get("import") === "1";
-if (pendingClipboardImport) {
+// die Zwischenablage und öffnet die App mit ?import=1 (-> Posteingang/KI) oder
+// ?shop=1 (-> Einkaufsliste). Die App zeigt dann einen Knopf, der den Text aus
+// der Zwischenablage übernimmt (Lesen braucht eine Nutzer-Geste = Knopfdruck).
+const _shareParams = new URLSearchParams(location.search);
+let pendingClipboardImport = _shareParams.get("import") === "1";
+let pendingShopImport = _shareParams.get("shop") === "1";
+if (pendingClipboardImport || pendingShopImport) {
   history.replaceState(null, "", location.pathname);
-  if (currentTab() !== "inbox") location.hash = "#inbox";
+  location.hash = pendingShopImport ? "#todos" : "#inbox";
 }
 
 // ---------------------------------------------------------------------------
@@ -820,7 +822,61 @@ function openDayDialog(iso) {
 // ---------------------------------------------------------------------------
 // View: ToDos
 // ---------------------------------------------------------------------------
+function renderShopping(root) {
+  const items = store.shopping();
+  const sec = section("🛒 Einkaufsliste");
+
+  // Über iOS-Kurzbefehl (?shop=1) geteilte Liste aus der Zwischenablage holen.
+  if (pendingShopImport) {
+    sec.append(el("div", { class: "card" },
+      el("p", { class: "hint" }, "📤 Aus dem Teilen-Menü erhalten. Tippe, um die Artikel zu übernehmen:"),
+      el("button", { class: "btn primary block", onclick: async () => {
+        try {
+          const clip = await navigator.clipboard.readText();
+          pendingShopImport = false;
+          const n = store.addShopping(clip || "");
+          if (!n) { alert("Die Zwischenablage ist leer."); render(); }
+        } catch (err) {
+          alert("Zwischenablage konnte nicht gelesen werden. Bitte unten manuell einfügen.");
+        }
+      }}, "📋 Geteilte Liste übernehmen"),
+    ));
+  }
+
+  // Schnell-Eingabe: eine Zeile / ein Komma = ein Artikel (WhatsApp einfügbar).
+  const input = el("textarea", { class: "input", rows: "2",
+    placeholder: "Artikel eingeben oder WhatsApp-Liste einfügen – eine Zeile oder Komma = ein Artikel …" });
+  const addBtn = el("button", { class: "btn primary", onclick: () => {
+    const n = store.addShopping(input.value);
+    input.value = "";
+    if (!n) input.focus();
+  }}, "+ Auf die Liste");
+  sec.append(el("div", { class: "card capture" }, input, el("div", { class: "row gap wrap" }, addBtn)));
+
+  const openItems = items.filter((i) => !i.done);
+  const doneItems = items.filter((i) => i.done);
+  if (!items.length) {
+    sec.append(el("p", { class: "muted small" }, "Liste ist leer."));
+  } else {
+    [...openItems, ...doneItems].forEach((i) => {
+      sec.append(
+        el("label", { class: "list-row shop-item" + (i.done ? " done" : "") },
+          el("input", { type: "checkbox", checked: i.done, onchange: () => store.toggleShopping(i.id) }),
+          el("div", { class: "list-main" }, el("div", { class: "list-title" }, i.text)),
+          el("button", { class: "icon-btn ghost", onclick: (ev) => { ev.preventDefault(); store.removeShopping(i.id); } }, "🗑"),
+        )
+      );
+    });
+    if (doneItems.length) {
+      sec.append(el("button", { class: "btn small block", onclick: () => store.clearCheckedShopping() },
+        `Erledigte entfernen (${doneItems.length})`));
+    }
+  }
+  root.append(sec);
+}
+
 function renderTodos(root) {
+  renderShopping(root);
   const todos = [...store.todos()].sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     const pa = { high: 0, normal: 1, low: 2 }[a.priority];

@@ -127,6 +127,7 @@ button { font-family: inherit; cursor: pointer; }
 .event-link-go { color: var(--tint); font-weight: 600; white-space: nowrap; }
 
 .todo.done .list-title { text-decoration: line-through; color: var(--muted); }
+.shop-item.done .list-title { text-decoration: line-through; color: var(--muted); }
 input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--tint); flex-shrink: 0; }
 
 /* Buttons */
