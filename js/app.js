@@ -101,6 +101,34 @@ const SHOP_PRESETS = [
   { name: "🧴 Drogerie (dm)", shop: "dm", items: ["Zahnpasta","Duschgel","Shampoo","Windeln","Feuchttücher","Waschmittel"] },
 ];
 
+// Warenkategorien für die Einkaufsliste, in sinnvoller "Laufreihenfolge" durch
+// den Supermarkt. Zuordnung per Stichwort (Teilwort-Treffer, klein geschrieben).
+// "sonstiges" ist der Auffang am Ende.
+const CATEGORIES = [
+  { id: "obst_gemuese", label: "🥦 Obst & Gemüse", keywords: ["apfel","äpfel","banane","birne","traube","beere","erdbeer","himbeer","heidelbeer","zitrone","orange","mandarine","clementine","tomate","gurke","salat","paprika","zwiebel","knoblauch","kartoffel","möhre","karotte","brokkoli","blumenkohl","spinat","avocado","zucchini","aubergine","pilz","champignon","lauch","sellerie","kohl","mango","melone","kiwi","pfirsich","pflaume","obst","gemüse","ingwer","petersilie","schnittlauch","kräuter","rucola","feldsalat","radieschen","rote bete","kürbis","spargel","mais"] },
+  { id: "brot", label: "🥖 Brot & Cerealien", keywords: ["brot","brötchen","semmel","toast","baguette","croissant","brezel","knäcke","zwieback","müsli","muesli","cornflakes","haferflocken","cerealien","getreide","porridge","backwaren"] },
+  { id: "milch", label: "🥛 Milchprodukte & Eier", keywords: ["milch","joghurt","jogurt","quark","sahne","butter","margarine","frischkäse","ei","eier","buttermilch","kefir","pudding","schmand","crème fraiche","creme fraiche","mozzarella","feta","skyr","milchprodukt"] },
+  { id: "fleisch", label: "🍖 Fleisch & Fisch", keywords: ["fleisch","hähnchen","hühnchen","hack","hackfleisch","steak","schnitzel","bratwurst","würstchen","gulasch","lachs","fisch","thunfisch","garnele","frikadelle","pute","rind","schwein","filet"] },
+  { id: "wurst_kaese", label: "🧀 Wurst & Käse", keywords: ["wurst","schinken","salami","aufschnitt","speck","käse","gouda","emmentaler","edamer","leberwurst","mortadella","aufstrich"] },
+  { id: "vorrat", label: "🥫 Vorräte & Trockenwaren", keywords: ["nudel","pasta","spaghetti","reis","mehl","zucker","salz","öl","essig","konserve","dose","tomatenmark","sauce","soße","gewürz","brühe","linsen","bohnen","kichererbsen","honig","marmelade","nutella","erdnussbutter","ketchup","senf","mayo","couscous","gnocchi","passierte"] },
+  { id: "tiefkuehl", label: "🧊 Tiefkühl", keywords: ["tiefkühl","tk-","tk ","pizza","speiseeis","pommes","fischstäbchen","gefroren","blätterteig"] },
+  { id: "suess", label: "🍫 Süßes & Snacks", keywords: ["schokolade","schoko","keks","chips","gummibär","bonbon","süßigkeit","snack","riegel","waffel","nüsse","erdnüsse","cracker","popcorn","lakritz"] },
+  { id: "getraenke", label: "🥤 Getränke", keywords: ["wasser","saft","cola","limo","limonade","bier","wein","kaffee","tee","sprudel","getränk","smoothie","eistee","spezi","sekt","apfelschorle"] },
+  { id: "drogerie", label: "🧴 Drogerie & Hygiene", keywords: ["zahnpasta","zahnbürste","shampoo","duschgel","seife","deo","creme","windel","feuchttücher","toilettenpapier","klopapier","taschentuch","binden","tampon","rasier","watte","sonnencreme","hygiene","pflege","zahnseide","wattestäbchen"] },
+  { id: "haushalt", label: "🧽 Haushalt", keywords: ["waschmittel","spülmittel","putz","reiniger","schwamm","müllbeutel","alufolie","frischhalte","küchenrolle","weichspüler","allzweck","glasreiniger","batterie","kerze","klarspüler","spültabs"] },
+  { id: "sonstiges", label: "📦 Sonstiges", keywords: [] },
+];
+
+// Ordnet einen Artikel anhand von Stichwörtern einer Kategorie zu.
+function categorize(text) {
+  const t = String(text || "").toLowerCase();
+  for (const c of CATEGORIES) {
+    if (c.keywords.some((k) => t.includes(k))) return c.id;
+  }
+  return "sonstiges";
+}
+const categoryById = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES[CATEGORIES.length - 1];
+
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -919,17 +947,35 @@ function renderShopping(root) {
     return;
   }
 
-  // Offene Artikel nach Markt gruppieren (bekannte Märkte zuerst, dann ohne).
-  [...STORES.map((s) => s.id), ""].forEach((sid) => {
-    const groupItems = openItems.filter((i) => (i.shop || "") === sid);
-    if (!groupItems.length) return;
-    const s = storeById(sid);
-    sec.append(el("div", { class: "shop-group-head" },
-      s ? el("span", { class: "store-tag", style: `background:${s.color}` }, s.label)
-        : el("span", { class: "muted small" }, "Noch zuzuordnen"),
-    ));
-    groupItems.forEach((i) => sec.append(shopItemRow(i)));
-  });
+  // Umschalter: Gruppierung nach Markt oder nach Warenkategorie.
+  const groupBy = store.get().meta.shopGroupBy || "store";
+  const segBtn = (id, label) => el("button", {
+    class: "seg" + (groupBy === id ? " active" : ""),
+    onclick: () => store.setMeta({ shopGroupBy: id }),
+  }, label);
+  sec.append(el("div", { class: "seg-row" }, segBtn("store", "🏪 Markt"), segBtn("category", "🗂 Kategorie")));
+
+  if (groupBy === "category") {
+    // Offene Artikel nach Warenkategorie gruppieren (in Laufreihenfolge).
+    CATEGORIES.forEach((cat) => {
+      const groupItems = openItems.filter((i) => categorize(i.text) === cat.id);
+      if (!groupItems.length) return;
+      sec.append(el("div", { class: "shop-group-head" }, el("span", {}, cat.label)));
+      groupItems.forEach((i) => sec.append(shopItemRow(i)));
+    });
+  } else {
+    // Offene Artikel nach Markt gruppieren (bekannte Märkte zuerst, dann ohne).
+    [...STORES.map((s) => s.id), ""].forEach((sid) => {
+      const groupItems = openItems.filter((i) => (i.shop || "") === sid);
+      if (!groupItems.length) return;
+      const s = storeById(sid);
+      sec.append(el("div", { class: "shop-group-head" },
+        s ? el("span", { class: "store-tag", style: `background:${s.color}` }, s.label)
+          : el("span", { class: "muted small" }, "Noch zuzuordnen"),
+      ));
+      groupItems.forEach((i) => sec.append(shopItemRow(i)));
+    });
+  }
 
   if (doneItems.length) {
     sec.append(el("div", { class: "shop-group-head" }, el("span", { class: "muted small" }, "Erledigt")));
