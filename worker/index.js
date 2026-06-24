@@ -101,7 +101,7 @@ Wenn im Inhalt mehrere Termine/ToDos stehen, gib mehrere items zurück. Wenn nic
       : "Erkenne Termine/ToDos in diesem Bild (Einladung, Elternbrief, Screenshot o.ä.).",
   });
 
-  const model = env.AI_MODEL || "@cf/meta/llama-3.2-11b-vision-instruct";
+  const model = env.AI_MODEL || "@cf/mistralai/mistral-small-3.1-24b-instruct";
   let aiRes;
   try {
     aiRes = await env.AI.run(model, {

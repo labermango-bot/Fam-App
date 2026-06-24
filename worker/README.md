@@ -8,6 +8,9 @@ sicher selbst kann:
    lässt ein Vision-Modell über **Cloudflare Workers AI** daraus
    Termine/ToDos extrahieren. Workers AI läuft direkt im Cloudflare-Konto —
    kein externer API-Key, kein zweiter Account, keine Kreditkarte nötig.
+   Standardmodell ist **Mistral Small 3.1** (`@cf/mistralai/mistral-small-3.1-24b-instruct`),
+   vision-fähig und ohne EU-Lizenzsperre. (Metas Llama-3.2-Vision-Modelle
+   sind absichtlich nicht gesetzt — deren Lizenz schließt EU-Nutzer aus.)
 2. **Kalender-Abo** (`/sync` + `/feed.ics`): spiegelt eure Termine in einen
    kleinen Speicher (Cloudflare KV), damit iOS sie als automatisch
    aktualisiertes Abo-Kalender abonnieren kann.
