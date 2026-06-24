@@ -68,6 +68,14 @@ async function handleClassify(req, env) {
   const { image, mediaType, text } = body || {};
   if (!image && !text) return json({ error: "Kein Bild und kein Text übergeben." }, 400);
 
+  // Enthält der Text einen Link (z. B. zu einer Event-Seite), laden wir den
+  // Seiteninhalt und geben ihn der KI mit — sonst sähe sie nur die nackte URL.
+  let pageText = "";
+  if (text) {
+    const urlMatch = text.match(/https?:\/\/[^\s]+/);
+    if (urlMatch) pageText = await fetchUrlText(urlMatch[0]);
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const system = `Du hilfst einer Familie, Termine und ToDos aus Fotos, Screenshots oder Text zu erkennen.
 Heutiges Datum: ${today} (Format YYYY-MM-DD).
@@ -97,7 +105,7 @@ Wenn im Inhalt mehrere Termine/ToDos stehen, gib mehrere items zurück. Wenn nic
   userContent.push({
     type: "text",
     text: text
-      ? `Text:\n${text}`
+      ? `Text:\n${text}${pageText ? `\n\nInhalt der verlinkten Seite:\n${pageText}` : ""}`
       : "Erkenne Termine/ToDos in diesem Bild (Einladung, Elternbrief, Screenshot o.ä.).",
   });
 
@@ -193,6 +201,61 @@ function extractJSON(text) {
     }
     return null;
   }
+}
+
+// Lädt eine verlinkte Seite und gibt deren reinen Text (gekürzt) zurück,
+// damit die KI Event-Infos von der Seite auswerten kann. Robust gedacht:
+// bei Fehlern/Timeout/Nicht-HTML einfach leerer String (dann nutzt die KI
+// nur den ursprünglichen Text). Interne/private Adressen werden geblockt.
+async function fetchUrlText(rawUrl) {
+  let url;
+  try { url = new URL(rawUrl); } catch (_) { return ""; }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+  const host = url.hostname.toLowerCase();
+  if (
+    host === "localhost" || host.endsWith(".local") || host.endsWith(".internal") ||
+    /^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host) ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+    host === "[::1]"
+  ) return "";
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url.toString(), {
+      signal: ctrl.signal,
+      redirect: "follow",
+      headers: {
+        "user-agent": "Mozilla/5.0 (compatible; FamOrga-LinkReader/1.0)",
+        accept: "text/html,application/xhtml+xml,text/plain",
+      },
+    });
+    clearTimeout(timer);
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    if (!/text\/html|application\/xhtml|text\/plain/.test(ct)) return "";
+    let html = await res.text();
+    if (html.length > 300000) html = html.slice(0, 300000);
+    return htmlToText(html).slice(0, 6000);
+  } catch (_) {
+    return "";
+  }
+}
+
+function htmlToText(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<head[\s\S]*?<\/head>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // ---------------------------------------------------------------------------
