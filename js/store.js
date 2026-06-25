@@ -33,6 +33,7 @@ function makeTodo(data) {
     due: data.due || "",
     dueTime: data.dueTime || "",     // optionale Uhrzeit "HH:MM"
     done: data.done || false,
+    doneAt: data.doneAt || null,     // Zeitpunkt des Abhakens (für Auto-Archiv)
     priority: data.priority || "normal", // low | normal | high
     notes: data.notes || "",
     source: data.source || "manual",
@@ -140,8 +141,8 @@ export const store = {
   member(id) {
     return state.members.find((m) => m.id === id);
   },
-  addMember({ name, color, role }) {
-    const m = { id: uid(), name, color: color || nextColor(), role: role || "child" };
+  addMember({ name, color, role, photo }) {
+    const m = { id: uid(), name, color: color || nextColor(), role: role || "child", photo: photo || null };
     state.members.push(m);
     persist();
     return m;
@@ -184,6 +185,7 @@ export const store = {
       bring: data.bring || [],    // [{id, text, done}] — am Termin mitbringen
       budget: data.budget || "",  // freie Angabe, z. B. "20 €"
       reminderLeadMinutes: data.reminderLeadMinutes ?? 60,
+      seriesId: data.seriesId || null, // verknüpft Termine einer Wiederholungs-Reihe
       source: data.source || "manual",
       createdAt: new Date().toISOString(),
     };
@@ -206,6 +208,14 @@ export const store = {
     state.todos = state.todos.filter((t) => t.eventId !== id);
     persist();
   },
+  // Alle Termine einer Wiederholungs-Reihe (und deren ToDos) löschen.
+  removeSeries(seriesId) {
+    if (!seriesId) return;
+    const ids = new Set(state.events.filter((e) => e.seriesId === seriesId).map((e) => e.id));
+    state.events = state.events.filter((e) => e.seriesId !== seriesId);
+    state.todos = state.todos.filter((t) => !ids.has(t.eventId));
+    persist();
+  },
   togglePrep(eventId, prepId) {
     const e = store.event(eventId);
     const p = e && e.prep.find((x) => x.id === prepId);
@@ -213,7 +223,7 @@ export const store = {
       p.done = !p.done;
       // Verknüpftes ToDo synchron halten.
       const linked = state.todos.find((t) => t.eventId === eventId && t.prepId === prepId);
-      if (linked) linked.done = p.done;
+      if (linked) { linked.done = p.done; linked.doneAt = p.done ? new Date().toISOString() : null; }
       persist();
     }
   },
@@ -253,6 +263,7 @@ export const store = {
     const t = state.todos.find((x) => x.id === id);
     if (t) {
       t.done = !t.done;
+      t.doneAt = t.done ? new Date().toISOString() : null; // für Auto-Archiv
       // Falls aus einem Termin-Vorbereitungsschritt: dort synchron abhaken.
       if (t.eventId && t.prepId) {
         const e = store.event(t.eventId);

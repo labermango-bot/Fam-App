@@ -160,6 +160,37 @@ const relativeDay = (iso) => {
 const mapsUrl = (location) =>
   `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(location)}`;
 
+// Avatar-Element eines Mitglieds: zeigt das Foto (falls vorhanden), sonst den
+// farbigen Kreis mit der ersten Buchstaben des Namens.
+function avatarEl(m, extraClass = "") {
+  const cls = "avatar" + (extraClass ? " " + extraClass : "");
+  if (m && m.photo) {
+    return el("span", { class: cls + " has-photo",
+      style: `background-image:url("${m.photo}")` });
+  }
+  return el("span", { class: cls, style: `background:${m ? m.color : "#8e8e93"}` }, m ? m.name.slice(0, 1) : "?");
+}
+
+// Liest ein Bild ein, schneidet es mittig quadratisch zu und gibt eine kleine
+// JPEG-DataURL zurück (klein genug für localStorage, bleibt offline).
+function fileToAvatarDataURL(file, size = 128) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const s = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
 // --- Geburtstage (jährlich wiederkehrend) ---------------------------------
 const pad2 = (n) => String(n).padStart(2, "0");
 function birthdaysOnDate(iso) {
@@ -197,6 +228,35 @@ function addGiftTodo(b, occIso) {
   }
   store.addTodo({ title, due, memberId: b.memberId || null, priority: "normal", source: "manual" });
   toast(`„${title}" angelegt (fällig ${relativeDay(due)})`);
+}
+
+// Eine Geburtstags-Listenzeile (in mehreren Kalender-Abschnitten genutzt).
+function birthdayRow(b, iso) {
+  const age = birthdayAgeAt(b, iso);
+  const m = b.memberId ? store.member(b.memberId) : null;
+  return el("div", { class: "list-row" },
+    el("span", { class: "cal-bday-lg" }, "🎂"),
+    el("div", { class: "list-main", onclick: () => openBirthdayDialog(b) },
+      el("div", { class: "list-title" }, b.name + (age != null ? ` (wird ${age})` : "")),
+      el("div", { class: "list-sub muted" },
+        `${fmtDate(iso)} · ${relativeDay(iso)}`,
+        m ? el("span", { class: "person-pill", style: `background:${m.color}` }, m.name) : null,
+      ),
+    ),
+    el("button", { class: "icon-btn ghost", title: "Geschenk-ToDo (1 Woche vorher)",
+      onclick: (ev) => { ev.stopPropagation(); addGiftTodo(b, iso); } }, "🎁"),
+  );
+}
+
+// Tippen auf die Geburtstags-Torte im Kalender: zeigt/bearbeitet den
+// Geburtstag (bei mehreren erst eine kleine Auswahl).
+function openBirthdaysForDay(bdays) {
+  if (!bdays.length) return;
+  if (bdays.length === 1) { openBirthdayDialog(bdays[0]); return; }
+  const body = el("div", {});
+  bdays.forEach((b) => body.append(
+    el("button", { class: "btn block", onclick: () => { closeModal(); openBirthdayDialog(b); } }, "🎂 " + b.name)));
+  openModal("Geburtstage", body);
 }
 
 // Liefert die IDs der Familienmitglieder, deren Name als ganzes Wort im Text
@@ -362,6 +422,69 @@ function weekSummary(events) {
   return parts;
 }
 
+// Namen der einem Termin zugeordneten Personen (für Teilen-Texte).
+function eventMemberNames(e) {
+  return (e.memberIds || []).map((id) => store.member(id)?.name).filter(Boolean);
+}
+
+// Wochenvorschau als teilbarer Text: Termine der nächsten 7 Tage nach Tagen
+// gruppiert, plus Hinweis auf offene Vorbereitungen und Geburtstage.
+function buildPreviewText() {
+  const lines = ["📅 Familien-Vorschau – nächste 7 Tage", ""];
+  const byDay = {};
+  store.events().forEach((e) => {
+    const d = daysFromToday(e.date);
+    if (d >= 0 && d <= 6) (byDay[e.date] = byDay[e.date] || []).push(e);
+  });
+  const dayKeys = Object.keys(byDay).sort();
+  if (!dayKeys.length) {
+    lines.push("Keine Termine. 🎉");
+  } else {
+    dayKeys.forEach((iso) => {
+      lines.push(`🗓 ${relativeDay(iso)}:`);
+      byDay[iso].sort(sortEvents).forEach((e) => {
+        const who = eventMemberNames(e);
+        lines.push(`• ${e.time ? e.time + " " : ""}${e.title}${who.length ? " (" + who.join(", ") + ")" : ""}`);
+      });
+      lines.push("");
+    });
+  }
+  const openPrep = store.events().reduce((n, e) => {
+    const d = daysFromToday(e.date);
+    return d >= 0 && d <= 6 ? n + (e.prep || []).filter((p) => !p.done).length : n;
+  }, 0);
+  if (openPrep) lines.push(`📋 Nicht vergessen: ${openPrep} Vorbereitung${openPrep === 1 ? "" : "en"} offen`);
+  const bdays = upcomingBirthdays(todayISO(), 7);
+  bdays.forEach(({ b, iso }) => lines.push(`🎂 ${b.name} – ${relativeDay(iso)}`));
+  return lines.join("\n").trim();
+}
+
+// Wochenrückblick als teilbarer Text: was in den letzten 7 Tagen lief und
+// abgehakt wurde.
+function buildReviewText() {
+  const lines = ["🔄 Familien-Rückblick – letzte 7 Tage", ""];
+  const pastEvents = store.events()
+    .filter((e) => { const d = daysFromToday(e.date); return d < 0 && d >= -7; })
+    .sort(sortEvents);
+  const doneTodos = store.todos().filter((t) => {
+    if (!t.done) return false;
+    const when = t.doneAt || t.createdAt;
+    if (!when) return false;
+    const d = daysFromToday(when.slice(0, 10));
+    return d <= 0 && d >= -7;
+  });
+  lines.push(`📅 ${pastEvents.length} Termin${pastEvents.length === 1 ? "" : "e"} · ✅ ${doneTodos.length} Aufgabe${doneTodos.length === 1 ? "" : "n"} erledigt`);
+  if (pastEvents.length) {
+    lines.push("", "Termine:");
+    pastEvents.forEach((e) => lines.push(`• ${fmtDate(e.date)}: ${e.title}`));
+  }
+  if (doneTodos.length) {
+    lines.push("", "Erledigt:");
+    doneTodos.forEach((t) => lines.push(`• ${t.title}`));
+  }
+  return lines.join("\n").trim();
+}
+
 // Kurzstatus pro Familienmitglied für das Cockpit.
 function memberStatusLabel(m, events) {
   const openTodos = store.todos().filter((t) => t.memberId === m.id && !t.done).length;
@@ -438,6 +561,11 @@ function renderToday(root) {
   const sumSec = section("🤖 Diese Woche");
   const sumCard = el("div", { class: "card" });
   weekSummary(events).forEach((s) => sumCard.append(el("div", { class: "summary-line" }, "• " + s)));
+  // Rückblick & Vorschau zum Teilen (z. B. an die Familie per WhatsApp).
+  sumCard.append(el("div", { class: "row gap wrap share-row" },
+    el("button", { class: "btn small", onclick: () => shareText(buildPreviewText()) }, "📤 Vorschau teilen"),
+    el("button", { class: "btn small", onclick: () => shareText(buildReviewText()) }, "📤 Rückblick teilen"),
+  ));
   sumSec.append(sumCard);
   root.append(sumSec);
 
@@ -482,7 +610,7 @@ function renderToday(root) {
     store.members().forEach((m) => {
       famSec.append(
         el("a", { class: "list-row", href: "#todos" },
-          el("span", { class: "avatar", style: `background:${m.color}` }, m.name.slice(0, 1)),
+          avatarEl(m),
           el("div", { class: "list-main" },
             el("div", { class: "list-title" }, m.name),
             el("div", { class: "list-sub" }, memberStatusLabel(m, events)),
@@ -939,7 +1067,8 @@ function renderCalendar(root) {
       onclick: () => openDayDialog(iso),
     },
       el("span", { class: "cal-day-num" }, String(day)),
-      bdays.length ? el("span", { class: "cal-bday" }, "🎂") : null,
+      bdays.length ? el("span", { class: "cal-bday", title: bdays.map((x) => x.name).join(", "),
+        onclick: (ev) => { ev.stopPropagation(); openBirthdaysForDay(bdays); } }, "🎂") : null,
       el("div", { class: "cal-dots" },
         ...dayEvents.slice(0, 4).map((e) => {
           const m = store.member((e.memberIds || [])[0]);
@@ -951,61 +1080,58 @@ function renderCalendar(root) {
   }
   root.append(grid);
 
-  // Schulferien Baden-Württemberg (kommende + laufende)
-  const holidays = upcomingHolidays(todayISO(), 4);
-  if (holidays.length) {
-    const fSec = section("🏖 Schulferien (BW)");
-    holidays.forEach((h) => {
-      const running = todayISO() >= h.start && todayISO() <= h.end;
-      fSec.append(
-        el("div", { class: "list-row" },
-          el("div", { class: "list-main" },
-            el("div", { class: "list-title" }, h.name + (running ? "  · läuft" : "")),
-            el("div", { class: "list-sub muted" }, `${fmtDate(h.start)} – ${fmtDate(h.end)}`),
-          ),
-        )
-      );
-    });
-    root.append(fSec);
-  }
+  // Reihenfolge unter dem Kalender: zuerst die Termine, dann die Geburtstage
+  // dieses Monats, einklappbar alle weiteren Geburtstage, zuletzt die Ferien.
 
-  // Geburtstage (anstehend, jährlich wiederkehrend)
-  const bSec = section("🎂 Geburtstage");
-  const upBdays = upcomingBirthdays(todayISO(), 366);
-  if (!upBdays.length) {
-    bSec.append(el("p", { class: "muted small" }, "Noch keine Geburtstage eingetragen."));
-  } else {
-    upBdays.forEach(({ b, iso }) => {
-      const age = birthdayAgeAt(b, iso);
-      const m = b.memberId ? store.member(b.memberId) : null;
-      bSec.append(
-        el("div", { class: "list-row" },
-          el("span", { class: "cal-bday-lg" }, "🎂"),
-          el("div", { class: "list-main", onclick: () => openBirthdayDialog(b) },
-            el("div", { class: "list-title" }, b.name + (age != null ? ` (wird ${age})` : "")),
-            el("div", { class: "list-sub muted" },
-              `${fmtDate(iso)} · ${relativeDay(iso)}`,
-              m ? el("span", { class: "person-pill", style: `background:${m.color}` }, m.name) : null,
-            ),
-          ),
-          el("button", { class: "icon-btn ghost", title: "Geschenk-ToDo (1 Woche vorher)",
-            onclick: (ev) => { ev.stopPropagation(); addGiftTodo(b, iso); } }, "🎁"),
-        )
-      );
-    });
-  }
-  bSec.append(el("button", { class: "btn block", onclick: () => openBirthdayDialog() }, "+ Geburtstag hinzufügen"));
-  root.append(bSec);
-
-  // Liste der Termine im Monat
+  // 1) Termine im aktuell angezeigten Monat
   const monthEvents = store.events()
     .filter((e) => e.date.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`))
     .filter(passesFilter)
     .sort(sortEvents);
-  const sec = section("Termine im Monat");
-  if (!monthEvents.length) sec.append(emptyState("Keine Termine in diesem Monat.", null));
-  else monthEvents.forEach((e) => sec.append(eventRow(e)));
-  root.append(sec);
+  const evSec = section("📅 Termine im Monat");
+  if (!monthEvents.length) evSec.append(emptyState("Keine Termine in diesem Monat.", null));
+  else monthEvents.forEach((e) => evSec.append(eventRow(e)));
+  root.append(evSec);
+
+  // 2) Geburtstage in diesem Monat
+  const monthBdays = store.birthdays()
+    .filter((b) => b.month === month + 1)
+    .map((b) => ({ b, iso: `${year}-${pad2(b.month)}-${pad2(b.day)}` }))
+    .sort((a, z) => a.b.day - z.b.day);
+  const bMonthSec = section("🎂 Geburtstage im Monat");
+  if (!monthBdays.length) bMonthSec.append(el("p", { class: "muted small" }, "Keine Geburtstage in diesem Monat."));
+  else monthBdays.forEach(({ b, iso }) => bMonthSec.append(birthdayRow(b, iso)));
+  root.append(bMonthSec);
+
+  // 3) Alle Geburtstage (einklappbar) + neuen anlegen
+  const allB = collapsibleSection("🎂 Alle Geburtstage", "allBirthdays");
+  root.append(allB.sec);
+  if (!allB.collapsed) {
+    const upBdays = upcomingBirthdays(todayISO(), 366);
+    if (!upBdays.length) allB.body.append(el("p", { class: "muted small" }, "Noch keine Geburtstage eingetragen."));
+    else upBdays.forEach(({ b, iso }) => allB.body.append(birthdayRow(b, iso)));
+    allB.body.append(el("button", { class: "btn block", onclick: () => openBirthdayDialog() }, "+ Geburtstag hinzufügen"));
+  }
+
+  // 4) Schulferien Baden-Württemberg (kommende + laufende), einklappbar
+  const holidays = upcomingHolidays(todayISO(), 4);
+  if (holidays.length) {
+    const fSec = collapsibleSection("🏖 Schulferien (BW)", "holidays");
+    root.append(fSec.sec);
+    if (!fSec.collapsed) {
+      holidays.forEach((h) => {
+        const running = todayISO() >= h.start && todayISO() <= h.end;
+        fSec.body.append(
+          el("div", { class: "list-row" },
+            el("div", { class: "list-main" },
+              el("div", { class: "list-title" }, h.name + (running ? "  · läuft" : "")),
+              el("div", { class: "list-sub muted" }, `${fmtDate(h.start)} – ${fmtDate(h.end)}`),
+            ),
+          )
+        );
+      });
+    }
+  }
 
   root.append(fab(() => openEventDialog()));
 }
@@ -1140,6 +1266,23 @@ function shopItemRow(i, showCat) {
   );
 }
 
+// Baut aus den offenen Einkaufs-Artikeln einen lesbaren Text (nach Markt
+// gruppiert) zum Teilen per WhatsApp.
+function buildShoppingShareText() {
+  const open = store.shopping().filter((i) => !i.done);
+  if (!open.length) return "";
+  const lines = ["🛒 Einkaufsliste"];
+  [...STORES.map((s) => s.id), ""].forEach((sid) => {
+    const group = open.filter((i) => (i.shop || "") === sid);
+    if (!group.length) return;
+    const s = storeById(sid);
+    lines.push("");
+    lines.push(s ? `🏪 ${s.label}` : "Sonstiges");
+    group.forEach((i) => lines.push("• " + i.text));
+  });
+  return lines.join("\n");
+}
+
 function renderShopping(root) {
   const items = store.shopping();
   const openCount = items.filter((i) => !i.done).length;
@@ -1199,6 +1342,19 @@ function renderShopping(root) {
   }, label);
   sec.append(el("div", { class: "seg-row" }, segBtn("store", "🏪 Markt"), segBtn("category", "🗂 Kategorie")));
 
+  // Offene Liste per WhatsApp/Teilen-Menü weitergeben.
+  if (openCount) {
+    sec.append(el("button", { class: "btn small block", onclick: () => shareText(buildShoppingShareText()) },
+      "📤 Liste teilen (WhatsApp …)"));
+  }
+
+  // Suchfeld bei längeren Listen.
+  if (items.length > 6) {
+    sec.append(el("input", { class: "input todo-search", type: "search", value: shopQuery,
+      placeholder: "🔍 Artikel suchen …",
+      oninput: (ev) => { shopQuery = ev.target.value; applyShopFilter(sec); } }));
+  }
+
   if (groupBy === "category") {
     // Offene Artikel nach Warenkategorie gruppieren (in Laufreihenfolge).
     CATEGORIES.forEach((cat) => {
@@ -1227,6 +1383,37 @@ function renderShopping(root) {
     sec.append(el("button", { class: "btn small block", onclick: () => store.clearCheckedShopping() },
       `Erledigte entfernen (${doneItems.length})`));
   }
+
+  // Aktive Suche nach erneutem Rendern (z. B. nach dem Abhaken) anwenden.
+  if (shopQuery.trim()) applyShopFilter(sec);
+}
+
+// Wie viele Tage ist ein ToDo schon erledigt? (Für das Auto-Archiv.)
+function todoDoneAgeDays(t) {
+  const when = (t.doneAt || t.createdAt || "").slice(0, 10);
+  if (!when) return 0;
+  return -daysFromToday(when); // positiv = vor X Tagen
+}
+
+const ARCHIVE_AFTER_DAYS = 30;
+let todoQuery = "";
+let shopQuery = "";
+
+// Blendet ToDo-Zeilen aus, die nicht zur Suche passen (ohne Neu-Rendern,
+// damit der Fokus im Suchfeld erhalten bleibt).
+function applyTodoFilter(root) {
+  const q = todoQuery.trim().toLowerCase();
+  root.querySelectorAll(".list-row.todo").forEach((row) => {
+    row.style.display = !q || row.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
+}
+
+// Dasselbe für Einkaufs-Artikel.
+function applyShopFilter(scope) {
+  const q = shopQuery.trim().toLowerCase();
+  scope.querySelectorAll(".shop-item").forEach((row) => {
+    row.style.display = !q || row.textContent.toLowerCase().includes(q) ? "" : "none";
+  });
 }
 
 function renderTodos(root) {
@@ -1241,19 +1428,38 @@ function renderTodos(root) {
 
   const open = todos.filter((t) => !t.done);
   const done = todos.filter((t) => t.done);
+  // Länger erledigte ToDos ins Archiv schieben, damit die Liste schlank bleibt.
+  const doneRecent = done.filter((t) => todoDoneAgeDays(t) < ARCHIVE_AFTER_DAYS);
+  const doneArchived = done.filter((t) => todoDoneAgeDays(t) >= ARCHIVE_AFTER_DAYS);
+  const searching = !!todoQuery.trim();
 
-  const openSec = collapsibleSection(`✅ Aufgaben – offen (${open.length})`, "todosOpen");
+  // Suchfeld über den Aufgaben.
+  const search = el("input", { class: "input todo-search", type: "search", value: todoQuery,
+    placeholder: "🔍 Aufgaben durchsuchen …",
+    oninput: (ev) => { todoQuery = ev.target.value; applyTodoFilter(root); } });
+  root.append(el("section", { class: "section" }, search));
+
+  const openSec = collapsibleSection(`✅ Aufgaben – offen (${open.length})`, "todosOpen", { forceOpen: searching });
   root.append(openSec.sec);
   if (!openSec.collapsed) {
     if (!open.length) openSec.body.append(emptyState("Keine offenen Aufgaben. 🎉", "ToDo hinzufügen", () => openTodoDialog()));
     open.forEach((t) => openSec.body.append(todoRow(t)));
   }
 
-  if (done.length) {
-    const doneSec = collapsibleSection(`✅ Aufgaben – erledigt (${done.length})`, "todosDone");
+  if (doneRecent.length) {
+    const doneSec = collapsibleSection(`✅ Aufgaben – erledigt (${doneRecent.length})`, "todosDone", { forceOpen: searching });
     root.append(doneSec.sec);
-    if (!doneSec.collapsed) done.forEach((t) => doneSec.body.append(todoRow(t)));
+    if (!doneSec.collapsed) doneRecent.forEach((t) => doneSec.body.append(todoRow(t)));
   }
+
+  if (doneArchived.length) {
+    const archSec = collapsibleSection(`🗄 Archiv – vor über ${ARCHIVE_AFTER_DAYS} Tagen erledigt (${doneArchived.length})`, "todosArchive", { forceOpen: searching });
+    root.append(archSec.sec);
+    if (!archSec.collapsed) doneArchived.forEach((t) => archSec.body.append(todoRow(t)));
+  }
+
+  // Beim erneuten Rendern (z. B. nach dem Abhaken) die aktive Suche anwenden.
+  if (searching) applyTodoFilter(root);
 
   root.append(fab(() => openTodoDialog()));
 }
@@ -1293,7 +1499,7 @@ function renderFamily(root) {
   store.members().forEach((m) => {
     sec.append(
       el("div", { class: "list-row" },
-        el("span", { class: "avatar", style: `background:${m.color}` }, m.name.slice(0, 1)),
+        avatarEl(m),
         el("div", { class: "list-main" },
           el("div", { class: "list-title" }, m.name),
           el("div", { class: "list-sub muted" }, m.role === "parent" ? "Elternteil" : "Kind"),
@@ -1422,6 +1628,7 @@ function eventRow(e) {
         openPrep ? el("span", { class: "badge-prep" }, `📋 ${openPrep}`) : null,
         bringCount ? el("span", { class: "badge-bring" }, `🎒 ${bringCount}`) : null,
         e.budget ? el("span", { class: "badge-budget" }, `💶 ${e.budget}`) : null,
+        e.seriesId ? el("span", { class: "badge-prep", title: "Wiederkehrender Termin" }, "🔁") : null,
       ),
     ),
   );
@@ -1463,9 +1670,45 @@ function toast(message) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
+// Teilt einen Text über das native Teilen-Menü (iOS: dort WhatsApp wählbar).
+// Fällt zurück auf einen direkten WhatsApp-Link und zuletzt auf die
+// Zwischenablage, damit es auf jedem Gerät irgendwie funktioniert.
+async function shareText(text) {
+  if (!text || !text.trim()) return;
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; }
+    catch (err) { if (err && err.name === "AbortError") return; } // Nutzer hat abgebrochen
+  }
+  // Fallback 1: direkt WhatsApp öffnen.
+  const wa = "https://wa.me/?text=" + encodeURIComponent(text);
+  const win = window.open(wa, "_blank", "noopener");
+  if (win) return;
+  // Fallback 2: in die Zwischenablage legen.
+  try { await navigator.clipboard.writeText(text); toast("In die Zwischenablage kopiert"); }
+  catch (e) { alert(text); }
+}
+
 // ---------------------------------------------------------------------------
 // Dialog: Termin
 // ---------------------------------------------------------------------------
+// Erzeugt aus einem Startdatum die Folgetermine einer Wiederholung.
+// freq: "daily" | "weekly" | "biweekly" | "monthly". count = Gesamtzahl
+// (inkl. Start). Liefert eine Liste von ISO-Datumswerten.
+function expandRecurrence(startISO, freq, count) {
+  const dates = [];
+  const d = parseISO(startISO);
+  const max = Math.min(Math.max(count, 1), 104); // Sicherheitskappung
+  for (let i = 0; i < max; i++) {
+    dates.push(isoOf(d));
+    if (freq === "daily") d.setDate(d.getDate() + 1);
+    else if (freq === "weekly") d.setDate(d.getDate() + 7);
+    else if (freq === "biweekly") d.setDate(d.getDate() + 14);
+    else if (freq === "monthly") d.setMonth(d.getMonth() + 1);
+    else break; // unbekannt -> nur Starttermin
+  }
+  return dates;
+}
+
 function openEventDialog(existing = null, onSaved = null) {
   const isEdit = existing && existing.id;
   const e = isEdit ? existing : {
@@ -1485,6 +1728,19 @@ function openEventDialog(existing = null, onSaved = null) {
   const reminder = el("select", { class: "input" },
     ...[[0,"zur Startzeit"],[15,"15 Min vorher"],[30,"30 Min vorher"],[60,"1 Std vorher"],[120,"2 Std vorher"],[1440,"1 Tag vorher"]]
       .map(([v,l]) => el("option", { value: v, selected: e.reminderLeadMinutes === v }, l)));
+
+  // Wiederholung (nur bei neuen Terminen): legt mehrere Termine als Reihe an.
+  const recurFreq = el("select", { class: "input" },
+    ...[["","Einmalig"],["daily","Täglich"],["weekly","Wöchentlich"],["biweekly","Alle 2 Wochen"],["monthly","Monatlich"]]
+      .map(([v,l]) => el("option", { value: v }, l)));
+  const recurCount = el("select", { class: "input narrow" },
+    ...[2,3,4,6,8,10,12,16,20,26,52].map((n) => el("option", { value: n, selected: n === 8 }, `${n}×`)));
+  const recurCountField = field("Anzahl", recurCount);
+  recurCountField.style.display = "none"; // erst sichtbar, wenn eine Frequenz gewählt ist
+  recurFreq.onchange = () => { recurCountField.style.display = recurFreq.value ? "" : "none"; };
+  const recurField = !isEdit
+    ? field("Wiederholen", el("div", { class: "row gap" }, recurFreq, recurCountField))
+    : null;
 
   // Personen-Auswahl
   const memberWrap = el("div", { class: "chip-row" });
@@ -1555,6 +1811,7 @@ function openEventDialog(existing = null, onSaved = null) {
     field("Titel", title),
     el("div", { class: "row gap" }, field("Datum", date), field("Uhrzeit", time)),
     el("div", { class: "row gap" }, field("Ende (optional)", endTime), field("Erinnerung", reminder)),
+    recurField,
     field("Ort", el("div", { class: "row gap center" }, location, routeBtn)),
     field("Für wen?", memberWrap),
     field("Vorbereiten", el("div", {}, tmplSelect, prepList, addPrepBtn)),
@@ -1562,7 +1819,7 @@ function openEventDialog(existing = null, onSaved = null) {
     field("Budget", budget),
     field("Notizen", notes),
     el("div", { class: "modal-actions" },
-      isEdit ? el("button", { class: "btn danger", onclick: () => { if (confirm("Termin löschen?")) { store.removeEvent(e.id); closeModal(); } } }, "Löschen") : null,
+      isEdit ? el("button", { class: "btn danger", onclick: deleteEvent }, "Löschen") : null,
       el("button", { class: "btn", onclick: saveAndExport }, "📅 In iOS-Kalender"),
       el("button", { class: "btn primary", onclick: save }, isEdit ? "Speichern" : "Hinzufügen"),
     ),
@@ -1582,10 +1839,37 @@ function openEventDialog(existing = null, onSaved = null) {
   function save() {
     const data = collectData();
     if (!data) return;
-    if (isEdit) store.updateEvent(e.id, data);
-    else store.addEvent(data);
+    if (isEdit) {
+      store.updateEvent(e.id, data);
+    } else if (recurFreq.value) {
+      // Wiederholung: ganze Reihe mit gemeinsamer seriesId anlegen. Jede
+      // Vorbereitung bekommt pro Termin eigene IDs.
+      const dates = expandRecurrence(data.date, recurFreq.value, Number(recurCount.value));
+      const seriesId = store.uid();
+      dates.forEach((dt) => store.addEvent({
+        ...data, date: dt, seriesId,
+        prep: data.prep.map((p) => ({ ...p, id: store.uid() })),
+        bring: data.bring.map((b) => ({ ...b, id: store.uid() })),
+      }));
+      toast(`${dates.length} Termine angelegt`);
+    } else {
+      store.addEvent(data);
+    }
     closeModal();
     if (onSaved) onSaved();
+  }
+
+  // Löschen: bei einem Reihen-Termin wahlweise nur diesen oder die ganze Reihe.
+  function deleteEvent() {
+    if (e.seriesId && store.events().filter((x) => x.seriesId === e.seriesId).length > 1) {
+      const all = confirm("Diesen Termin gehört zu einer Wiederholung.\n\nOK = ganze Reihe löschen\nAbbrechen = nur diesen Termin");
+      if (all) store.removeSeries(e.seriesId);
+      else store.removeEvent(e.id);
+      closeModal();
+    } else if (confirm("Termin löschen?")) {
+      store.removeEvent(e.id);
+      closeModal();
+    }
   }
 
   // Termin speichern UND als Einzel-.ics für den iOS-Kalender exportieren.
@@ -1738,8 +2022,32 @@ function openMemberDialog(existing = null) {
     colorWrap.append(sw);
   });
 
+  // Foto (optional): wird mittig quadratisch verkleinert und lokal gespeichert.
+  let chosenPhoto = m.photo || null;
+  let preview = avatarEl({ name: name.value || "?", color: chosen, photo: chosenPhoto }, "avatar-lg");
+  function refreshPreview() {
+    const next = avatarEl({ name: name.value || "?", color: chosen, photo: chosenPhoto }, "avatar-lg");
+    preview.replaceWith(next);
+    preview = next;
+  }
+  const photoInput = el("input", { type: "file", accept: "image/*", style: "display:none",
+    onchange: async (ev) => {
+      const file = ev.target.files[0];
+      ev.target.value = "";
+      if (!file) return;
+      try { chosenPhoto = await fileToAvatarDataURL(file); refreshPreview(); }
+      catch (e) { alert("Bild konnte nicht gelesen werden."); }
+    } });
+  const photoBtn = el("label", { class: "btn small" }, chosenPhoto ? "Foto ändern" : "📷 Foto wählen", photoInput);
+  const removePhotoBtn = el("button", { class: "btn small ghost", type: "button",
+    onclick: () => { chosenPhoto = null; refreshPreview(); } }, "Foto entfernen");
+  const photoRow = el("div", { class: "row gap center" }, preview, photoBtn, removePhotoBtn);
+
   const body = el("div", {},
     field("Name", name),
+    // Bewusst ein <div> statt field()/<label>, da photoBtn selbst ein <label>
+    // ist (verschachtelte Labels führen sonst zu Fehlklicks).
+    el("div", { class: "field" }, el("span", { class: "field-label" }, "Foto"), photoRow),
     field("Rolle", role),
     field("Farbe", colorWrap),
     el("div", { class: "modal-actions" },
@@ -1748,8 +2056,9 @@ function openMemberDialog(existing = null) {
   );
   function save() {
     if (!name.value.trim()) { name.focus(); return; }
-    if (isEdit) store.updateMember(m.id, { name: name.value.trim(), role: role.value, color: chosen });
-    else store.addMember({ name: name.value.trim(), role: role.value, color: chosen });
+    const data = { name: name.value.trim(), role: role.value, color: chosen, photo: chosenPhoto || null };
+    if (isEdit) store.updateMember(m.id, data);
+    else store.addMember(data);
     closeModal();
   }
   openModal(isEdit ? "Person bearbeiten" : "Person hinzufügen", body);
