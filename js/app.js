@@ -335,6 +335,7 @@ function familyStatus(events, todos) {
   });
   (todos || []).forEach((t) => {
     if (t.done || !t.due) return;
+    if (t.eventId && t.prepId) return; // aus einem Termin-Vorbereitungsschritt: oben schon gezählt
     const dDue = daysFromToday(t.due);
     if (dDue <= 0) { alerts.push({ type: "todo", todo: t, urgency: "red" }); bump("red"); }   // heute oder überfällig
     else if (dDue === 1) { alerts.push({ type: "todo", todo: t, urgency: "yellow" }); bump("yellow"); } // morgen
