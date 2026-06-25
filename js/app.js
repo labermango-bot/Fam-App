@@ -230,6 +230,77 @@ function addGiftTodo(b, occIso) {
   toast(`„${title}" angelegt (fällig ${relativeDay(due)})`);
 }
 
+// --- Geburtstag per Sprache (Posteingang) ---------------------------------
+const MONTH_NAMES = {
+  januar: 1, februar: 2, märz: 3, april: 4, mai: 5, juni: 6,
+  juli: 7, august: 8, september: 9, oktober: 10, november: 11, dezember: 12,
+};
+// Liest aus diktiertem Text Name + Datum, z. B. "Oma Erika hat am 3. Mai
+// Geburtstag" oder "Tim, 12.4.1980". Liefert bestmögliche Schätzung; Rest
+// (Person verknüpfen, Korrekturen) macht der Nutzer im Dialog.
+function parseBirthdaySpeech(raw) {
+  const text = String(raw || "").trim();
+  let day = null, month = null, year = null, matched = "";
+
+  let m = text.match(/\b(\d{1,2})\.\s*(\d{1,2})\.?\s*(\d{2,4})?\b/);
+  if (m) {
+    day = Number(m[1]); month = Number(m[2]);
+    if (m[3]) { year = Number(m[3]); if (year < 100) year += year < 30 ? 2000 : 1900; }
+    matched = m[0];
+  } else {
+    const monthPattern = Object.keys(MONTH_NAMES).join("|");
+    const re = new RegExp(`\\b(\\d{1,2})\\.?\\s*(${monthPattern})\\b(?:\\s+(\\d{4}))?`, "i");
+    m = text.match(re);
+    if (m) {
+      day = Number(m[1]); month = MONTH_NAMES[m[2].toLowerCase()];
+      if (m[3]) year = Number(m[3]);
+      matched = m[0];
+    }
+  }
+
+  let name = matched ? text.replace(matched, " ") : text;
+  name = name
+    .replace(/\b(geburtstag|hat|hatte|von|ist|am|der|die|das|wird|geboren|im|jahr)\b/gi, " ")
+    .replace(/[.,;:!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { name, day, month, year };
+}
+
+function speechRecognitionSupported() {
+  return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+// Startet die Diktierfunktion des Browsers und öffnet danach den
+// Geburtstags-Dialog vorausgefüllt mit dem, was erkannt wurde.
+function startBirthdaySpeechCapture() {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Rec) { alert("Spracheingabe wird von diesem Browser nicht unterstützt."); return; }
+  const rec = new Rec();
+  rec.lang = "de-DE";
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  toast("🎤 Sprich jetzt … z. B. „Oma Erika hat am 3. Mai Geburtstag“");
+  rec.onresult = (ev) => {
+    const transcript = ev.results[0][0].transcript;
+    const parsed = parseBirthdaySpeech(transcript);
+    const mentioned = membersMentioned(parsed.name);
+    openBirthdayDialog({
+      name: parsed.name || transcript.trim(),
+      day: parsed.day, month: parsed.month, year: parsed.year,
+      memberId: mentioned[0] || null,
+    });
+    if (!parsed.day || !parsed.month) {
+      toast("Datum nicht eindeutig erkannt – bitte prüfen/ergänzen.");
+    }
+  };
+  rec.onerror = (ev) => {
+    if (ev.error === "no-speech") toast("Nichts gehört, bitte erneut versuchen.");
+    else if (ev.error !== "aborted") alert("Spracherkennung fehlgeschlagen: " + ev.error);
+  };
+  rec.start();
+}
+
 // Eine Geburtstags-Listenzeile (in mehreren Kalender-Abschnitten genutzt).
 function birthdayRow(b, iso) {
   const age = birthdayAgeAt(b, iso);
@@ -644,6 +715,15 @@ function renderInbox(root) {
     "Alles reinwerfen, was an dich herangetragen wird – aus WhatsApp, Mail, " +
     "Elternbriefen oder Post. Per KI automatisch erkennen lassen oder in Ruhe selbst umwandeln.");
   root.append(intro);
+
+  if (speechRecognitionSupported()) {
+    root.append(
+      el("div", { class: "card" },
+        el("p", { class: "hint" }, "🎤 Geburtstag diktieren, z. B. „Oma Erika hat am 3. Mai Geburtstag“."),
+        el("button", { class: "btn primary block", onclick: () => startBirthdaySpeechCapture() }, "🎤 Geburtstag per Sprache hinzufügen"),
+      )
+    );
+  }
 
   // Über den iOS-Kurzbefehl geöffnet (?import=1): geteilten Text aus der
   // Zwischenablage übernehmen. Der Knopfdruck liefert die nötige Nutzer-Geste,
