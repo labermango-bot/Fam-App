@@ -1584,9 +1584,8 @@ function openEventDialog(existing = null, onSaved = null) {
     let ev;
     if (isEdit) { store.updateEvent(e.id, data); ev = store.event(e.id); }
     else { ev = store.addEvent(data); }
-    exportOneICS(ev);
-    closeModal();
     if (onSaved) onSaved();
+    addEventToIOS(ev); // öffnet eigenen Dialog mit antippbarem Kalender-Link
   }
 
   openModal(isEdit ? "Termin bearbeiten" : "Neuer Termin", body);
@@ -1755,6 +1754,37 @@ function exportAllICS() {
 }
 function exportOneICS(e) {
   downloadICS(e.title.replace(/[^\wäöüÄÖÜ ]/g, "") || "Termin", buildICS([e], (id) => store.member(id)));
+}
+
+// UTF-8-sichere base64url-Kodierung (für den Worker-/event.ics-Link).
+function b64urlEncode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// Bietet den Termin zum Hinzufügen in den iOS-Kalender an. Auf dem iPhone
+// öffnet ein Datei-Download keinen Kalender-Dialog — deshalb gehen wir über
+// einen echten Link: bevorzugt den Worker-Endpunkt (Safari erkennt die
+// Kalender-Datei und bietet „Hinzufügen"), sonst als data:-Fallback.
+function addEventToIOS(ev) {
+  const meta = store.get().meta || {};
+  const base = meta.workerUrl ? meta.workerUrl.replace(/\/+$/, "") : "";
+  let href;
+  if (base) {
+    const payload = b64urlEncode(JSON.stringify({ event: ev, members: store.members() }));
+    href = `${base}/event.ics?e=${payload}`;
+  } else {
+    href = "data:text/calendar;charset=utf-8," + encodeURIComponent(buildICS([ev], (id) => store.member(id)));
+  }
+  const body = el("div", {},
+    el("p", { class: "hint" }, "Der Termin ist in FamOrga gespeichert. Zum Übernehmen in den iOS-Kalender tippen – iOS zeigt dann „Hinzufügen“ und legt ihn in deinem Standardkalender (z. B. „Familie DCs Kalender“) ab."),
+    el("a", { class: "btn primary block", href, target: "_blank", rel: "noopener",
+      onclick: () => { setTimeout(closeModal, 800); } }, "📅 Jetzt zum iOS-Kalender hinzufügen"),
+    base ? null : el("p", { class: "hint small" }, "Hinweis: Für den zuverlässigen Weg bitte unter „Familie → KI & Kalender-Abo“ die Worker-URL eintragen."),
+  );
+  openModal("In iOS-Kalender übernehmen", body);
 }
 function exportBackup() {
   const blob = new Blob([store.exportJSON()], { type: "application/json" });

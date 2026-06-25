@@ -50,6 +50,9 @@ export default {
       if (url.pathname === "/feed.ics" && req.method === "GET") {
         return cors(await handleFeed(req, env));
       }
+      if (url.pathname === "/event.ics" && req.method === "GET") {
+        return cors(handleEventIcs(req));
+      }
       return cors(json({ error: "Not found" }, 404));
     } catch (err) {
       return cors(json({ error: String(err && err.message ? err.message : err) }, 500));
@@ -256,6 +259,36 @@ function htmlToText(html) {
     .replace(/&#0?39;|&apos;/gi, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// ---------------------------------------------------------------------------
+// GET /event.ics — liefert EINEN Termin als .ics (Daten base64url im Query).
+// Damit kann iOS-Safari den Termin direkt „Zum Kalender hinzufügen" anbieten;
+// das funktioniert zuverlässiger als ein Datei-Download in einer PWA.
+// ---------------------------------------------------------------------------
+function b64urlDecode(s) {
+  s = String(s).replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+function handleEventIcs(req) {
+  const url = new URL(req.url);
+  const enc = url.searchParams.get("e");
+  if (!enc) return new Response("Kein Termin angegeben.", { status: 400 });
+  let payload;
+  try { payload = JSON.parse(b64urlDecode(enc)); } catch (e) { return new Response("Ungültige Termindaten.", { status: 400 }); }
+  const ev = payload.event || payload;
+  const members = Array.isArray(payload.members) ? payload.members : [];
+  const ics = buildICS([ev], (id) => members.find((m) => m.id === id));
+  return new Response(ics, {
+    status: 200,
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-disposition": 'inline; filename="termin.ics"',
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
