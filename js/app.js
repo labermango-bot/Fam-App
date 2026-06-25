@@ -234,9 +234,10 @@ store.subscribe(render);
 const _shareParams = new URLSearchParams(location.search);
 let pendingClipboardImport = _shareParams.get("import") === "1";
 let pendingShopImport = _shareParams.get("shop") === "1";
-if (pendingClipboardImport || pendingShopImport) {
+let pendingCalImport = _shareParams.get("calimport") === "1";
+if (pendingClipboardImport || pendingShopImport || pendingCalImport) {
   history.replaceState(null, "", location.pathname);
-  location.hash = pendingShopImport ? "#todos" : "#inbox";
+  location.hash = pendingShopImport ? "#todos" : pendingCalImport ? "#calendar" : "#inbox";
 }
 
 // ---------------------------------------------------------------------------
@@ -822,8 +823,75 @@ function attachSwipe(node, onSwipeLeft, onSwipeRight) {
   }, { passive: true });
 }
 
+// Parst die vom Kurzbefehl gelieferten Zeilen "Titel | JJJJ-MM-TT | HH:MM | Ort".
+// Datum auch als TT.MM.JJJJ akzeptiert; Uhrzeit "00:00" gilt als ganztägig.
+function parseCalendarImport(text) {
+  const normDate = (s) => {
+    s = (s || "").trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    if (m) return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+    return "";
+  };
+  return String(text || "").split(/\r?\n+/).map((line) => {
+    const p = line.split("|").map((s) => s.trim());
+    const title = p[0];
+    const date = normDate(p[1]);
+    if (!title || !date) return null;
+    let time = (p[2] || "").trim();
+    if (!/^\d{1,2}:\d{2}$/.test(time) || time === "00:00") time = "";
+    else if (time.length === 4) time = "0" + time;
+    return { title, date, time, location: p[3] || "" };
+  }).filter(Boolean);
+}
+
+function openCalImportReview(parsed) {
+  const chosen = new Set(parsed.map((_, i) => i));
+  const body = el("div", {},
+    el("p", { class: "hint" }, `${parsed.length} Termine gefunden. Nicht gewünschte abwählen, dann übernehmen.`));
+  parsed.forEach((ev, i) => {
+    const cb = el("input", { type: "checkbox", checked: true, onchange: () => { cb.checked ? chosen.add(i) : chosen.delete(i); } });
+    body.append(el("label", { class: "list-row" }, cb,
+      el("div", { class: "list-main" },
+        el("div", { class: "list-title" }, ev.title),
+        el("div", { class: "list-sub muted" }, `${fmtDate(ev.date)}${ev.time ? " · " + ev.time : " · ganztägig"}${ev.location ? " · " + ev.location : ""}`),
+      )));
+  });
+  body.append(el("button", { class: "btn primary block", onclick: () => {
+    let n = 0;
+    parsed.forEach((ev, i) => {
+      if (!chosen.has(i)) return;
+      store.addEvent({ title: ev.title, date: ev.date, time: ev.time, location: ev.location, source: "import" });
+      n++;
+    });
+    closeModal();
+    toast(`${n} Termin${n === 1 ? "" : "e"} übernommen`);
+  }}, "✓ Ausgewählte übernehmen"));
+  openModal("Termine aus iOS-Kalender", body);
+}
+
 function renderCalendar(root) {
   root.append(viewToggle());
+
+  // Über iOS-Kurzbefehl (?calimport=1) geteilte Kalender-Termine übernehmen.
+  if (pendingCalImport) {
+    root.append(el("div", { class: "card" },
+      el("p", { class: "hint" }, "📥 Termine aus deinem iOS-Kalender erhalten. Tippe, um sie zu prüfen und zu übernehmen:"),
+      el("button", { class: "btn primary block", onclick: async () => {
+        try {
+          const clip = await navigator.clipboard.readText();
+          pendingCalImport = false;
+          const parsed = parseCalendarImport(clip || "");
+          if (!parsed.length) { alert("Keine Termine in der Zwischenablage gefunden."); render(); return; }
+          openCalImportReview(parsed);
+        } catch (err) {
+          alert("Zwischenablage konnte nicht gelesen werden.");
+        }
+      }}, "📋 Geteilte Termine übernehmen"),
+    ));
+  }
+
   if (calView === "week") return renderWeek(root);
 
   attachSwipe(root, () => shiftMonth(1), () => shiftMonth(-1));
