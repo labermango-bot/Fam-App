@@ -30,14 +30,22 @@ button { font-family: inherit; cursor: pointer; }
 #app { max-width: 640px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; }
 
 /* App-Bar */
+/* WICHTIG: backdrop-filter darf nicht direkt auf dem sticky-Element sitzen —
+   in Mobile Safari bricht das die Klebewirkung, die Leiste "wandert" beim
+   Scrollen statt fixiert zu bleiben. Deshalb Blur in einem ::before, das
+   Element selbst bleibt unverändert/ungefiltert. */
 .appbar {
   position: sticky; top: 0; z-index: 20;
   padding: calc(var(--safe-top) + 12px) 16px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  isolation: isolate;
+}
+.appbar::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
   background: color-mix(in srgb, var(--bg) 85%, transparent);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--border);
 }
 .appbar h1 { font-size: 22px; font-weight: 700; margin: 0; }
 
@@ -191,14 +199,21 @@ input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--tint); fle
 }
 
 /* Tab-Bar */
+/* Gleicher Grund wie bei .appbar: backdrop-filter nicht direkt auf das
+   sticky-Element, sondern auf ein ::before, sonst klebt die Leiste in
+   Mobile Safari nicht und scrollt mit dem Inhalt mit. */
 .tabbar {
   position: sticky; bottom: 0; z-index: 20;
   display: flex; justify-content: space-around;
   padding: 8px 4px calc(8px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  isolation: isolate;
+}
+.tabbar::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
   background: color-mix(in srgb, var(--bg) 85%, transparent);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-top: 1px solid var(--border);
 }
 .tab { text-decoration: none; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; font-weight: 600; }
 .tab.active { color: var(--tint); }
