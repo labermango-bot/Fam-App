@@ -31,6 +31,7 @@ function makeTodo(data) {
     title: data.title || "Neues ToDo",
     memberId: data.memberId || null,
     due: data.due || "",
+    dueTime: data.dueTime || "",     // optionale Uhrzeit "HH:MM"
     done: data.done || false,
     priority: data.priority || "normal", // low | normal | high
     notes: data.notes || "",

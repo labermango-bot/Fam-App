@@ -45,6 +45,8 @@ button { font-family: inherit; cursor: pointer; }
 .content { flex: 1; padding: 12px 16px 96px; }
 .section { margin-top: 22px; }
 .section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px 4px; }
+.section-title.collapsible { cursor: pointer; user-select: none; -webkit-user-select: none; }
+.collapse-caret { display: inline-block; width: 14px; color: var(--tint); }
 
 /* Karten / Listen */
 .card { background: var(--card); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }

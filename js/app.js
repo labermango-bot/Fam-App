@@ -323,7 +323,7 @@ function familyStatus(events, todos) {
     (e.prep || []).forEach((p) => {
       if (p.done) return;
       const dDeadline = dEvent - (p.leadDays || 0); // Tage bis zur Vorbereitungs-Frist
-      if (dEvent <= 1 || dDeadline < 0) {
+      if (dEvent <= 1 || dDeadline <= 0) {
         alerts.push({ type: "prep", event: e, prep: p, urgency: "red" });
         bump("red");
       } else if (dDeadline <= 2) {
@@ -335,8 +335,8 @@ function familyStatus(events, todos) {
   (todos || []).forEach((t) => {
     if (t.done || !t.due) return;
     const dDue = daysFromToday(t.due);
-    if (dDue < 0) { alerts.push({ type: "todo", todo: t, urgency: "red" }); bump("red"); }
-    else if (dDue <= 1) { alerts.push({ type: "todo", todo: t, urgency: "yellow" }); bump("yellow"); }
+    if (dDue <= 0) { alerts.push({ type: "todo", todo: t, urgency: "red" }); bump("red"); }   // heute oder überfällig
+    else if (dDue === 1) { alerts.push({ type: "todo", todo: t, urgency: "yellow" }); bump("yellow"); } // morgen
   });
   alerts.sort((a, b) => (a.urgency === b.urgency ? 0 : a.urgency === "red" ? -1 : 1));
   return { level, alerts };
@@ -406,7 +406,7 @@ function renderToday(root) {
             el("input", { type: "checkbox", onchange: () => store.toggleTodo(t.id) }),
             el("div", { class: "list-main" },
               el("div", { class: "list-title" }, t.title),
-              el("div", { class: "list-sub" }, `Aufgabe · fällig ${relativeDay(t.due)}`),
+              el("div", { class: "list-sub" }, `Aufgabe · fällig ${relativeDay(t.due)}${t.dueTime ? ", " + t.dueTime + " Uhr" : ""}`),
             ),
           )
         );
@@ -1056,7 +1056,11 @@ function shopItemRow(i, showCat) {
 
 function renderShopping(root) {
   const items = store.shopping();
-  const sec = section("🛒 Einkaufsliste");
+  const openCount = items.filter((i) => !i.done).length;
+  const { sec: secEl, body: sec, collapsed } = collapsibleSection(
+    `🛒 Einkaufsliste${openCount ? ` (${openCount})` : ""}`, "shopping", { forceOpen: pendingShopImport });
+  root.append(secEl);
+  if (collapsed) return;
 
   // Über iOS-Kurzbefehl (?shop=1) geteilte Liste aus der Zwischenablage holen.
   if (pendingShopImport) {
@@ -1098,7 +1102,6 @@ function renderShopping(root) {
   const doneItems = items.filter((i) => i.done);
   if (!items.length) {
     sec.append(el("p", { class: "muted small" }, "Liste ist leer."));
-    root.append(sec);
     return;
   }
 
@@ -1138,7 +1141,6 @@ function renderShopping(root) {
     sec.append(el("button", { class: "btn small block", onclick: () => store.clearCheckedShopping() },
       `Erledigte entfernen (${doneItems.length})`));
   }
-  root.append(sec);
 }
 
 function renderTodos(root) {
@@ -1154,15 +1156,17 @@ function renderTodos(root) {
   const open = todos.filter((t) => !t.done);
   const done = todos.filter((t) => t.done);
 
-  const secOpen = section(`✅ Aufgaben – offen (${open.length})`);
-  if (!open.length) secOpen.append(emptyState("Keine offenen Aufgaben. 🎉", "ToDo hinzufügen", () => openTodoDialog()));
-  open.forEach((t) => secOpen.append(todoRow(t)));
-  root.append(secOpen);
+  const openSec = collapsibleSection(`✅ Aufgaben – offen (${open.length})`, "todosOpen");
+  root.append(openSec.sec);
+  if (!openSec.collapsed) {
+    if (!open.length) openSec.body.append(emptyState("Keine offenen Aufgaben. 🎉", "ToDo hinzufügen", () => openTodoDialog()));
+    open.forEach((t) => openSec.body.append(todoRow(t)));
+  }
 
   if (done.length) {
-    const secDone = section(`✅ Aufgaben – erledigt (${done.length})`);
-    done.forEach((t) => secDone.append(todoRow(t)));
-    root.append(secDone);
+    const doneSec = collapsibleSection(`✅ Aufgaben – erledigt (${done.length})`, "todosDone");
+    root.append(doneSec.sec);
+    if (!doneSec.collapsed) done.forEach((t) => doneSec.body.append(todoRow(t)));
   }
 
   root.append(fab(() => openTodoDialog()));
@@ -1182,7 +1186,7 @@ function todoRow(t) {
         t.title),
       el("div", { class: "list-sub" },
         m ? el("span", { class: "person-pill", style: `background:${m.color}` }, m.name) : null,
-        t.due ? el("span", { class: overdue ? "danger" : "muted" }, (m ? " · " : "") + "fällig " + relativeDay(t.due)) : null,
+        t.due ? el("span", { class: overdue ? "danger" : "muted" }, (m ? " · " : "") + "fällig " + relativeDay(t.due) + (t.dueTime ? `, ${t.dueTime} Uhr` : "")) : null,
         linkedEvent
           ? el("span", { class: "badge-event" }, `📅 ${linkedEvent.title}`)
           : (t.source && t.source !== "manual" ? el("span", { class: "muted" }, " · " + (SOURCE_LABELS[t.source] || "")) : null),
@@ -1284,6 +1288,21 @@ function renderAISettings() {
 // ---------------------------------------------------------------------------
 function section(title) {
   return el("section", { class: "section" }, title ? el("h2", { class: "section-title" }, title) : null);
+}
+// Abschnitt mit klickbarer Überschrift zum Ein-/Ausklappen. Der Zustand wird
+// pro key in meta.collapsed gemerkt. Inhalt in das zurückgegebene body füllen.
+function collapsibleSection(title, key, opts = {}) {
+  const stored = (store.get().meta.collapsed || {})[key];
+  const collapsed = opts.forceOpen ? false : !!stored;
+  const head = el("h2", { class: "section-title collapsible", onclick: () => {
+    const cm = store.get().meta.collapsed || {};
+    cm[key] = !cm[key];
+    store.setMeta({ collapsed: cm });
+  } }, el("span", { class: "collapse-caret" }, collapsed ? "▸" : "▾"), " " + title);
+  const body = el("div", {});
+  const sec = el("section", { class: "section" }, head);
+  if (!collapsed) sec.append(body);
+  return { sec, body, collapsed };
 }
 function emptyState(text, ctaLabel, onClick) {
   const wrap = el("div", { class: "empty" }, el("p", {}, text));
@@ -1493,6 +1512,7 @@ function openTodoDialog(existing = null, onSaved = null) {
     el("option", { value: "", selected: !t.memberId }, "— niemand zugeordnet —"),
     ...store.members().map((m) => el("option", { value: m.id, selected: t.memberId === m.id }, m.name)));
   const due = el("input", { class: "input", type: "date", value: t.due });
+  const dueTime = el("input", { class: "input", type: "time", value: t.dueTime || "" });
   const prio = el("select", { class: "input" },
     ...[["low","Niedrig"],["normal","Normal"],["high","Hoch 🔴"]].map(([v,l]) => el("option", { value: v, selected: t.priority === v }, l)));
   const notes = el("textarea", { class: "input", rows: "2", placeholder: "Notizen" }, t.notes || "");
@@ -1529,7 +1549,7 @@ function openTodoDialog(existing = null, onSaved = null) {
     tmplField,
     field("Aufgabe", title),
     el("div", { class: "row gap" }, field("Für wen?", memberSel), field("Priorität", prio)),
-    field("Fällig am", due),
+    el("div", { class: "row gap" }, field("Fällig am", due), field("Uhrzeit (optional)", dueTime)),
     field("Notizen", notes),
     el("div", { class: "modal-actions" },
       isEdit ? el("button", { class: "btn danger", onclick: () => { store.removeTodo(t.id); closeModal(); } }, "Löschen") : null,
@@ -1539,7 +1559,7 @@ function openTodoDialog(existing = null, onSaved = null) {
 
   function save() {
     if (!title.value.trim()) { title.focus(); return; }
-    const data = { title: title.value.trim(), memberId: memberSel.value || null, due: due.value, priority: prio.value, notes: notes.value.trim(), source: t.source };
+    const data = { title: title.value.trim(), memberId: memberSel.value || null, due: due.value, dueTime: dueTime.value, priority: prio.value, notes: notes.value.trim(), source: t.source };
     if (isEdit) store.updateTodo(t.id, data);
     else store.addTodo(data);
     closeModal();
