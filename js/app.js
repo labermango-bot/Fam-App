@@ -306,15 +306,17 @@ function greeting() {
   return "Guten Abend";
 }
 
-// Familien-Ampel: bewertet offene Vorbereitungen anhand der Vorlaufzeit.
-//   rot   = Termin steht heute/morgen an und Vorbereitung fehlt, oder die
-//           Vorbereitungs-Frist ist bereits überschritten.
-//   gelb  = eine Vorbereitungs-Frist ist in den nächsten 48 h fällig.
-//   grün  = nichts Offenes in Sicht.
+// Familien-Ampel: bewertet offene Vorbereitungen UND fällige ToDos.
+//   rot   = Termin steht heute/morgen an und Vorbereitung fehlt, Vorbereitungs-
+//           Frist überschritten, oder ein ToDo ist überfällig.
+//   gelb  = eine Vorbereitungs-Frist ist in den nächsten 48 h fällig, oder ein
+//           ToDo ist heute/morgen fällig.
+//   grün  = nichts Dringendes offen.
 // Liefert zugleich die Liste der betroffenen Punkte (rot zuerst).
-function familyStatus(events) {
+function familyStatus(events, todos) {
   let level = "green";
   const alerts = [];
+  const bump = (lvl) => { if (lvl === "red") level = "red"; else if (level !== "red") level = "yellow"; };
   events.forEach((e) => {
     const dEvent = daysFromToday(e.date);
     if (dEvent < 0) return;
@@ -322,13 +324,19 @@ function familyStatus(events) {
       if (p.done) return;
       const dDeadline = dEvent - (p.leadDays || 0); // Tage bis zur Vorbereitungs-Frist
       if (dEvent <= 1 || dDeadline < 0) {
-        alerts.push({ event: e, prep: p, urgency: "red" });
-        level = "red";
+        alerts.push({ type: "prep", event: e, prep: p, urgency: "red" });
+        bump("red");
       } else if (dDeadline <= 2) {
-        alerts.push({ event: e, prep: p, urgency: "yellow" });
-        if (level !== "red") level = "yellow";
+        alerts.push({ type: "prep", event: e, prep: p, urgency: "yellow" });
+        bump("yellow");
       }
     });
+  });
+  (todos || []).forEach((t) => {
+    if (t.done || !t.due) return;
+    const dDue = daysFromToday(t.due);
+    if (dDue < 0) { alerts.push({ type: "todo", todo: t, urgency: "red" }); bump("red"); }
+    else if (dDue <= 1) { alerts.push({ type: "todo", todo: t, urgency: "yellow" }); bump("yellow"); }
   });
   alerts.sort((a, b) => (a.urgency === b.urgency ? 0 : a.urgency === "red" ? -1 : 1));
   return { level, alerts };
@@ -366,7 +374,7 @@ function renderToday(root) {
   const events = [...store.events()].sort(sortEvents);
   const upcoming = events.filter((e) => daysFromToday(e.date) >= 0).slice(0, 12);
   const inboxCount = store.inbox().filter((i) => !i.processed).length;
-  const { level, alerts } = familyStatus(events);
+  const { level, alerts } = familyStatus(events, store.todos());
 
   // Begrüßung + Datum
   const now = new Date();
@@ -377,9 +385,9 @@ function renderToday(root) {
 
   // Familien-Ampel
   const ampelText = {
-    green: "Alles im Griff – keine offenen Vorbereitungen.",
-    yellow: "Bald dran: etwas muss in den nächsten 48 Stunden erledigt werden.",
-    red: "Achtung: ein Termin steht kurz bevor und es fehlt noch Vorbereitung.",
+    green: "Alles im Griff – nichts Dringendes offen.",
+    yellow: "Bald dran: etwas ist in den nächsten 48 Stunden fällig.",
+    red: "Achtung: etwas ist überfällig oder steht unmittelbar bevor.",
   };
   const ampelDot = { green: "🟢", yellow: "🟡", red: "🔴" };
   root.append(el("div", { class: "ampel ampel-" + level },
@@ -387,19 +395,33 @@ function renderToday(root) {
     el("span", {}, ampelText[level]),
   ));
 
-  // Heute wichtig (fällige Vorbereitungen)
+  // Heute wichtig (fällige Vorbereitungen UND fällige ToDos)
   if (alerts.length) {
     const sec = section("⚠️ Heute wichtig");
-    alerts.slice(0, 8).forEach(({ event, prep, urgency }) => {
-      sec.append(
-        el("label", { class: "list-row prep-row" + (urgency === "red" ? " urgent" : "") },
-          el("input", { type: "checkbox", onchange: () => store.togglePrep(event.id, prep.id) }),
-          el("div", { class: "list-main" },
-            el("div", { class: "list-title" }, prep.text),
-            el("div", { class: "list-sub" }, `für „${event.title}" · ${relativeDay(event.date)}`),
-          ),
-        )
-      );
+    alerts.slice(0, 10).forEach((a) => {
+      if (a.type === "todo") {
+        const t = a.todo;
+        sec.append(
+          el("label", { class: "list-row prep-row" + (a.urgency === "red" ? " urgent" : "") },
+            el("input", { type: "checkbox", onchange: () => store.toggleTodo(t.id) }),
+            el("div", { class: "list-main" },
+              el("div", { class: "list-title" }, t.title),
+              el("div", { class: "list-sub" }, `Aufgabe · fällig ${relativeDay(t.due)}`),
+            ),
+          )
+        );
+      } else {
+        const { event, prep } = a;
+        sec.append(
+          el("label", { class: "list-row prep-row" + (a.urgency === "red" ? " urgent" : "") },
+            el("input", { type: "checkbox", onchange: () => store.togglePrep(event.id, prep.id) }),
+            el("div", { class: "list-main" },
+              el("div", { class: "list-title" }, prep.text),
+              el("div", { class: "list-sub" }, `für „${event.title}" · ${relativeDay(event.date)}`),
+            ),
+          )
+        );
+      }
     });
     root.append(sec);
   }
