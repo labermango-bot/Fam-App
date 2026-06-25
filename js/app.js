@@ -1132,13 +1132,13 @@ function renderTodos(root) {
   const open = todos.filter((t) => !t.done);
   const done = todos.filter((t) => t.done);
 
-  const secOpen = section(`Offen (${open.length})`);
+  const secOpen = section(`✅ Aufgaben – offen (${open.length})`);
   if (!open.length) secOpen.append(emptyState("Keine offenen Aufgaben. 🎉", "ToDo hinzufügen", () => openTodoDialog()));
   open.forEach((t) => secOpen.append(todoRow(t)));
   root.append(secOpen);
 
   if (done.length) {
-    const secDone = section(`Erledigt (${done.length})`);
+    const secDone = section(`✅ Aufgaben – erledigt (${done.length})`);
     done.forEach((t) => secDone.append(todoRow(t)));
     root.append(secDone);
   }
