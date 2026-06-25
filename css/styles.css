@@ -313,6 +313,12 @@ select.input { -webkit-appearance: none; appearance: none; }
 .modal-body { padding: 16px calc(16px + var(--safe-bottom)) calc(24px + var(--safe-bottom)); }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
 .prep-edit > div { margin-bottom: 8px; }
+/* Vorbereitungs-Schritt: Text bekommt die volle Zeilenbreite, Vorlauf-Auswahl
+   und Löschen rutschen darunter — sonst war das Textfeld neben Auswahl +
+   Löschen-Knopf zu schmal und der Text wurde abgeschnitten. */
+.prep-row .input { margin-bottom: 6px; }
+.prep-row-meta { display: flex; gap: 8px; align-items: center; }
+.prep-row-meta .icon-btn { flex: 0 0 auto; margin-left: auto; }
 
 @media (min-width: 480px) {
   .modal { align-self: center; border-radius: 20px; margin: auto; }

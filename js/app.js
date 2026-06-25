@@ -903,12 +903,14 @@ function renderAIItemCard(item, source, onResolved) {
     function renderPrep() {
       prepList.innerHTML = "";
       prepItems.forEach((p, idx) => {
-        prepList.append(el("div", { class: "row gap center" },
-          el("input", { class: "input flex", value: p.text, oninput: (ev) => p.text = ev.target.value }),
-          el("select", { class: "input narrow", onchange: (ev) => p.leadDays = Number(ev.target.value) },
-            ...[[0,"am Tag"],[1,"1 Tag vor"],[2,"2 Tage vor"],[3,"3 Tage vor"],[7,"1 Woche vor"]]
-              .map(([v,l]) => el("option", { value: v, selected: (p.leadDays||0) === v }, l))),
-          el("button", { class: "icon-btn ghost", type: "button", onclick: () => { prepItems.splice(idx,1); renderPrep(); } }, "✕"),
+        prepList.append(el("div", { class: "prep-row" },
+          el("input", { class: "input", value: p.text, placeholder: "z. B. Fußballschuhe für Leo packen", oninput: (ev) => p.text = ev.target.value }),
+          el("div", { class: "prep-row-meta" },
+            el("select", { class: "input narrow", onchange: (ev) => p.leadDays = Number(ev.target.value) },
+              ...[[0,"am Tag"],[1,"1 Tag vor"],[2,"2 Tage vor"],[3,"3 Tage vor"],[7,"1 Woche vor"]]
+                .map(([v,l]) => el("option", { value: v, selected: (p.leadDays||0) === v }, l))),
+            el("button", { class: "icon-btn ghost", type: "button", onclick: () => { prepItems.splice(idx,1); renderPrep(); } }, "✕"),
+          ),
         ));
       });
     }
@@ -1843,12 +1845,14 @@ function openEventDialog(existing = null, onSaved = null) {
   function renderPrep() {
     prepList.innerHTML = "";
     prepItems.forEach((p, idx) => {
-      prepList.append(el("div", { class: "row gap center" },
-        el("input", { class: "input flex", value: p.text, placeholder: "z. B. Sportzeug packen", oninput: (ev) => p.text = ev.target.value }),
-        el("select", { class: "input narrow", onchange: (ev) => p.leadDays = Number(ev.target.value) },
-          ...[[0,"am Tag"],[1,"1 Tag vor"],[2,"2 Tage vor"],[3,"3 Tage vor"],[7,"1 Woche vor"]]
-            .map(([v,l]) => el("option", { value: v, selected: (p.leadDays||0) === v }, l))),
-        el("button", { class: "icon-btn ghost", type: "button", onclick: () => { prepItems.splice(idx,1); renderPrep(); } }, "✕"),
+      prepList.append(el("div", { class: "prep-row" },
+        el("input", { class: "input", value: p.text, placeholder: "z. B. Fußballschuhe für Leo packen", oninput: (ev) => p.text = ev.target.value }),
+        el("div", { class: "prep-row-meta" },
+          el("select", { class: "input narrow", onchange: (ev) => p.leadDays = Number(ev.target.value) },
+            ...[[0,"am Tag"],[1,"1 Tag vor"],[2,"2 Tage vor"],[3,"3 Tage vor"],[7,"1 Woche vor"]]
+              .map(([v,l]) => el("option", { value: v, selected: (p.leadDays||0) === v }, l))),
+          el("button", { class: "icon-btn ghost", type: "button", onclick: () => { prepItems.splice(idx,1); renderPrep(); } }, "✕"),
+        ),
       ));
     });
   }
