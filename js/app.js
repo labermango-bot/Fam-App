@@ -847,16 +847,27 @@ function parseCalendarImport(text) {
   }).filter(Boolean);
 }
 
+// Erkennt, ob ein gleichnamiger Termin am selben Tag/zur selben Zeit schon
+// existiert — verhindert Dubletten beim wiederholten Ausführen des
+// Kalender-Kurzbefehls.
+function findDuplicateEvent(ev) {
+  const norm = (s) => (s || "").trim().toLowerCase();
+  return store.events().find(
+    (e) => norm(e.title) === norm(ev.title) && e.date === ev.date && (e.time || "") === (ev.time || "")
+  );
+}
+
 function openCalImportReview(parsed) {
-  const chosen = new Set(parsed.map((_, i) => i));
+  const dupes = parsed.map((ev) => Boolean(findDuplicateEvent(ev)));
+  const chosen = new Set(parsed.map((_, i) => i).filter((i) => !dupes[i]));
   const body = el("div", {},
     el("p", { class: "hint" }, `${parsed.length} Termine gefunden. Nicht gewünschte abwählen, dann übernehmen.`));
   parsed.forEach((ev, i) => {
-    const cb = el("input", { type: "checkbox", checked: true, onchange: () => { cb.checked ? chosen.add(i) : chosen.delete(i); } });
+    const cb = el("input", { type: "checkbox", checked: !dupes[i], onchange: () => { cb.checked ? chosen.add(i) : chosen.delete(i); } });
     body.append(el("label", { class: "list-row" }, cb,
       el("div", { class: "list-main" },
         el("div", { class: "list-title" }, ev.title),
-        el("div", { class: "list-sub muted" }, `${fmtDate(ev.date)}${ev.time ? " · " + ev.time : " · ganztägig"}${ev.location ? " · " + ev.location : ""}`),
+        el("div", { class: "list-sub muted" }, `${fmtDate(ev.date)}${ev.time ? " · " + ev.time : " · ganztägig"}${ev.location ? " · " + ev.location : ""}${dupes[i] ? " · ⚠️ bereits vorhanden" : ""}`),
       )));
   });
   body.append(el("button", { class: "btn primary block", onclick: () => {
