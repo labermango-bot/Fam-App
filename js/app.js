@@ -2147,33 +2147,38 @@ function exportOneICS(e) {
   downloadICS(e.title.replace(/[^\wäöüÄÖÜ ]/g, "") || "Termin", buildICS([e], (id) => store.member(id)));
 }
 
-// UTF-8-sichere base64url-Kodierung (für den Worker-/event.ics-Link).
-function b64urlEncode(str) {
-  const bytes = new TextEncoder().encode(str);
-  let bin = "";
-  bytes.forEach((b) => { bin += String.fromCharCode(b); });
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
+// Bietet den Termin zum Hinzufügen in den iOS-Kalender an. Rein clientseitig
+// (kein Worker nötig): Auf dem iPhone ist das native Teilen mit einer echten
+// .ics-Datei der zuverlässigste Weg — iOS bietet dann „Zum Kalender
+// hinzufügen". Wo das nicht geht (Desktop/Android), ein antippbarer .ics-Link.
+async function addEventToIOS(ev) {
+  const ics = buildICS([ev], (id) => store.member(id));
+  const filename = ((ev.title || "Termin").replace(/[^\wäöüÄÖÜ ]/g, "").trim() || "Termin") + ".ics";
 
-// Bietet den Termin zum Hinzufügen in den iOS-Kalender an. Auf dem iPhone
-// öffnet ein Datei-Download keinen Kalender-Dialog — deshalb gehen wir über
-// einen echten Link: bevorzugt den Worker-Endpunkt (Safari erkennt die
-// Kalender-Datei und bietet „Hinzufügen"), sonst als data:-Fallback.
-function addEventToIOS(ev) {
-  const meta = store.get().meta || {};
-  const base = meta.workerUrl ? meta.workerUrl.replace(/\/+$/, "") : "";
-  let href;
-  if (base) {
-    const payload = b64urlEncode(JSON.stringify({ event: ev, members: store.members() }));
-    href = `${base}/event.ics?e=${payload}`;
-  } else {
-    href = "data:text/calendar;charset=utf-8," + encodeURIComponent(buildICS([ev], (id) => store.member(id)));
+  // 1) Web Share mit echter Datei — beste iOS-Integration (auch als PWA).
+  try {
+    if (navigator.canShare) {
+      const file = new File([ics], filename, { type: "text/calendar" });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: ev.title || "Termin" });
+        closeModal();
+        return;
+      }
+    }
+  } catch (err) {
+    // Nutzer hat abgebrochen o.ä. — Dialog schließen, kein Fehler.
+    if (err && err.name === "AbortError") { closeModal(); return; }
+    // sonst auf den Link-Fallback unten zurückfallen.
   }
+
+  // 2) Fallback: antippbarer Link (Blob), öffnet die Kalender-Vorschau.
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
   const body = el("div", {},
-    el("p", { class: "hint" }, "Der Termin ist in FamOrga gespeichert. Zum Übernehmen in den iOS-Kalender tippen – iOS zeigt dann „Hinzufügen“ und legt ihn in deinem Standardkalender (z. B. „Familie DCs Kalender“) ab."),
-    el("a", { class: "btn primary block", href, target: "_blank", rel: "noopener",
-      onclick: () => { setTimeout(closeModal, 800); } }, "📅 Jetzt zum iOS-Kalender hinzufügen"),
-    base ? null : el("p", { class: "hint small" }, "Hinweis: Für den zuverlässigen Weg bitte unter „Familie → KI & Kalender-Abo“ die Worker-URL eintragen."),
+    el("p", { class: "hint" }, "Der Termin ist in FamOrga gespeichert. Zum Übernehmen in den iOS-Kalender tippen – iOS zeigt dann „Hinzufügen“ und legt ihn in deinem Standardkalender ab."),
+    el("a", { class: "btn primary block", href: url, target: "_blank", rel: "noopener", download: filename,
+      onclick: () => { setTimeout(() => { URL.revokeObjectURL(url); closeModal(); }, 1500); } },
+      "📅 Jetzt zum iOS-Kalender hinzufügen"),
   );
   openModal("In iOS-Kalender übernehmen", body);
 }
@@ -2228,8 +2233,20 @@ function handleSharedText() {
 // Service Worker (Offline-Fähigkeit)
 // ---------------------------------------------------------------------------
 if ("serviceWorker" in navigator) {
+  // Bei einem Worker-Wechsel (neue Version aktiviert) genau einmal neu laden,
+  // damit die App sofort die aktuelle Fassung zeigt — ohne mehrfaches Schließen.
+  let swReloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (swReloaded) return;
+    swReloaded = true;
+    location.reload();
+  });
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js").then((reg) => {
+      // Aktiv nach einer neueren Version suchen (auch wenn die App offen bleibt).
+      reg.update();
+      setInterval(() => reg.update(), 60 * 60 * 1000);
+    }).catch(() => {});
   });
 }
 
