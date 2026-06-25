@@ -401,23 +401,29 @@ function renderToday(root) {
     alerts.slice(0, 10).forEach((a) => {
       if (a.type === "todo") {
         const t = a.todo;
+        const tm = t.memberId ? store.member(t.memberId) : null;
         sec.append(
           el("label", { class: "list-row prep-row" + (a.urgency === "red" ? " urgent" : "") },
             el("input", { type: "checkbox", onchange: () => store.toggleTodo(t.id) }),
             el("div", { class: "list-main" },
               el("div", { class: "list-title" }, t.title),
-              el("div", { class: "list-sub" }, `Aufgabe · fällig ${relativeDay(t.due)}${t.dueTime ? ", " + t.dueTime + " Uhr" : ""}`),
+              el("div", { class: "list-sub" },
+                tm ? el("span", { class: "person-pill", style: `background:${tm.color}` }, tm.name) : null,
+                `${tm ? " · " : ""}Aufgabe · fällig ${relativeDay(t.due)}${t.dueTime ? ", " + t.dueTime + " Uhr" : ""}`),
             ),
           )
         );
       } else {
         const { event, prep } = a;
+        const em = (event.memberIds || []).map((id) => store.member(id)).filter(Boolean);
         sec.append(
           el("label", { class: "list-row prep-row" + (a.urgency === "red" ? " urgent" : "") },
             el("input", { type: "checkbox", onchange: () => store.togglePrep(event.id, prep.id) }),
             el("div", { class: "list-main" },
               el("div", { class: "list-title" }, prep.text),
-              el("div", { class: "list-sub" }, `für „${event.title}" · ${relativeDay(event.date)}`),
+              el("div", { class: "list-sub" },
+                ...em.map((m) => el("span", { class: "person-pill", style: `background:${m.color}` }, m.name)),
+                `${em.length ? " · " : ""}für „${event.title}" · ${relativeDay(event.date)}`),
             ),
           )
         );
