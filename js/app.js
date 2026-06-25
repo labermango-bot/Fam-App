@@ -267,38 +267,45 @@ function parseBirthdaySpeech(raw) {
   return { name, day, month, year };
 }
 
-function speechRecognitionSupported() {
-  return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
-}
-
-// Startet die Diktierfunktion des Browsers und öffnet danach den
-// Geburtstags-Dialog vorausgefüllt mit dem, was erkannt wurde.
+// Öffnet ein kleines Diktier-Fenster für Geburtstage. Bewusst KEIN
+// Web-Speech-API (window.webkitSpeechRecognition): das ist auf dem iPhone –
+// vor allem als installierte PWA – unzuverlässig und liefert oft gar kein
+// Ergebnis. Stattdessen ein Textfeld, das beim Öffnen den Fokus bekommt:
+// Auf dem iPhone erscheint dann die Tastatur mit dem Mikrofon-Symbol, über
+// das man bequem diktiert (funktioniert systemweit). Aus dem Text wird
+// Name + Datum gelesen und der Geburtstags-Dialog vorausgefüllt geöffnet.
 function startBirthdaySpeechCapture() {
-  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Rec) { alert("Spracheingabe wird von diesem Browser nicht unterstützt."); return; }
-  const rec = new Rec();
-  rec.lang = "de-DE";
-  rec.interimResults = false;
-  rec.maxAlternatives = 1;
-  toast("🎤 Sprich jetzt … z. B. „Oma Erika hat am 3. Mai Geburtstag“");
-  rec.onresult = (ev) => {
-    const transcript = ev.results[0][0].transcript;
-    const parsed = parseBirthdaySpeech(transcript);
+  const input = el("textarea", { class: "input", rows: "2",
+    placeholder: "z. B. „Oma Erika hat am 3. Mai Geburtstag“" });
+
+  function next() {
+    const raw = input.value.trim();
+    if (!raw) { input.focus(); return; }
+    const parsed = parseBirthdaySpeech(raw);
     const mentioned = membersMentioned(parsed.name);
+    closeModal();
     openBirthdayDialog({
-      name: parsed.name || transcript.trim(),
+      name: parsed.name || raw,
       day: parsed.day, month: parsed.month, year: parsed.year,
       memberId: mentioned[0] || null,
     });
     if (!parsed.day || !parsed.month) {
       toast("Datum nicht eindeutig erkannt – bitte prüfen/ergänzen.");
     }
-  };
-  rec.onerror = (ev) => {
-    if (ev.error === "no-speech") toast("Nichts gehört, bitte erneut versuchen.");
-    else if (ev.error !== "aborted") alert("Spracherkennung fehlgeschlagen: " + ev.error);
-  };
-  rec.start();
+  }
+
+  const body = el("div", {},
+    el("p", { class: "hint" },
+      "Tippe ins Feld und nutze auf der Tastatur das 🎤-Symbol zum Diktieren – " +
+      "oder tippe den Text einfach ein. Beispiel: „Opa Heinz hat am 14. März Geburtstag“."),
+    field("Geburtstag", input),
+    el("div", { class: "modal-actions" },
+      el("button", { class: "btn primary", onclick: next }, "Weiter"),
+    ),
+  );
+  openModal("🎂 Geburtstag diktieren", body);
+  // Fokus setzen, damit die Tastatur (mit Mikrofon) direkt aufgeht.
+  setTimeout(() => input.focus(), 150);
 }
 
 // Eine Geburtstags-Listenzeile (in mehreren Kalender-Abschnitten genutzt).
@@ -716,14 +723,12 @@ function renderInbox(root) {
     "Elternbriefen oder Post. Per KI automatisch erkennen lassen oder in Ruhe selbst umwandeln.");
   root.append(intro);
 
-  if (speechRecognitionSupported()) {
-    root.append(
-      el("div", { class: "card" },
-        el("p", { class: "hint" }, "🎤 Geburtstag diktieren, z. B. „Oma Erika hat am 3. Mai Geburtstag“."),
-        el("button", { class: "btn primary block", onclick: () => startBirthdaySpeechCapture() }, "🎤 Geburtstag per Sprache hinzufügen"),
-      )
-    );
-  }
+  root.append(
+    el("div", { class: "card" },
+      el("p", { class: "hint" }, "🎤 Geburtstag diktieren, z. B. „Oma Erika hat am 3. Mai Geburtstag“."),
+      el("button", { class: "btn primary block", onclick: () => startBirthdaySpeechCapture() }, "🎤 Geburtstag per Sprache hinzufügen"),
+    )
+  );
 
   // Über den iOS-Kurzbefehl geöffnet (?import=1): geteilten Text aus der
   // Zwischenablage übernehmen. Der Knopfdruck liefert die nötige Nutzer-Geste,
