@@ -1483,22 +1483,39 @@ function openEventDialog(existing = null, onSaved = null) {
     field("Notizen", notes),
     el("div", { class: "modal-actions" },
       isEdit ? el("button", { class: "btn danger", onclick: () => { if (confirm("Termin löschen?")) { store.removeEvent(e.id); closeModal(); } } }, "Löschen") : null,
-      isEdit ? el("button", { class: "btn", onclick: () => exportOneICS(e) }, "📤 .ics") : null,
+      el("button", { class: "btn", onclick: saveAndExport }, "📅 In iOS-Kalender"),
       el("button", { class: "btn primary", onclick: save }, isEdit ? "Speichern" : "Hinzufügen"),
     ),
   );
 
-  function save() {
-    if (!title.value.trim()) { title.focus(); return; }
-    const data = {
+  function collectData() {
+    if (!title.value.trim()) { title.focus(); return null; }
+    return {
       title: title.value.trim(), date: date.value, time: time.value, endTime: endTime.value,
       location: location.value.trim(), notes: notes.value.trim(),
       memberIds: [...selected], prep: prepItems.filter((p) => p.text.trim()),
       bring: bringItems.filter((b) => b.text.trim()), budget: budget.value.trim(),
       reminderLeadMinutes: Number(reminder.value), source: e.source,
     };
+  }
+
+  function save() {
+    const data = collectData();
+    if (!data) return;
     if (isEdit) store.updateEvent(e.id, data);
     else store.addEvent(data);
+    closeModal();
+    if (onSaved) onSaved();
+  }
+
+  // Termin speichern UND als Einzel-.ics für den iOS-Kalender exportieren.
+  function saveAndExport() {
+    const data = collectData();
+    if (!data) return;
+    let ev;
+    if (isEdit) { store.updateEvent(e.id, data); ev = store.event(e.id); }
+    else { ev = store.addEvent(data); }
+    exportOneICS(ev);
     closeModal();
     if (onSaved) onSaved();
   }
