@@ -267,45 +267,31 @@ function parseBirthdaySpeech(raw) {
   return { name, day, month, year };
 }
 
-// Öffnet ein kleines Diktier-Fenster für Geburtstage. Bewusst KEIN
-// Web-Speech-API (window.webkitSpeechRecognition): das ist auf dem iPhone –
-// vor allem als installierte PWA – unzuverlässig und liefert oft gar kein
-// Ergebnis. Stattdessen ein Textfeld, das beim Öffnen den Fokus bekommt:
-// Auf dem iPhone erscheint dann die Tastatur mit dem Mikrofon-Symbol, über
-// das man bequem diktiert (funktioniert systemweit). Aus dem Text wird
-// Name + Datum gelesen und der Geburtstags-Dialog vorausgefüllt geöffnet.
-function startBirthdaySpeechCapture() {
-  const input = el("textarea", { class: "input", rows: "2",
-    placeholder: "z. B. „Oma Erika hat am 3. Mai Geburtstag“" });
+// Erkennt am Stichwort, ob ein Posteingangs-Text einen Geburtstag meint
+// ("… hat Geburtstag", "geboren am …", "Geb. …"). Wird vor der KI-Erkennung
+// geprüft, damit Geburtstage direkt im passenden Dialog landen statt als
+// Termin.
+function looksLikeBirthday(text) {
+  return /\bgeburtstag\b|\bgeboren\b|\bgeb\.?\b|\bbirthday\b/i.test(String(text || ""));
+}
 
-  function next() {
-    const raw = input.value.trim();
-    if (!raw) { input.focus(); return; }
-    const parsed = parseBirthdaySpeech(raw);
-    const mentioned = membersMentioned(parsed.name);
-    closeModal();
-    openBirthdayDialog({
-      name: parsed.name || raw,
-      day: parsed.day, month: parsed.month, year: parsed.year,
-      memberId: mentioned[0] || null,
-    });
-    if (!parsed.day || !parsed.month) {
-      toast("Datum nicht eindeutig erkannt – bitte prüfen/ergänzen.");
-    }
+// Öffnet aus einem (diktierten oder getippten) Posteingangs-Text den
+// Geburtstags-Dialog vorausgefüllt. Liefert false, wenn der Text nicht nach
+// Geburtstag aussieht (dann übernimmt die normale KI-Erkennung).
+function tryBirthdayFromText(raw) {
+  const text = String(raw || "").trim();
+  if (!text || !looksLikeBirthday(text)) return false;
+  const parsed = parseBirthdaySpeech(text);
+  const mentioned = membersMentioned(parsed.name);
+  openBirthdayDialog({
+    name: parsed.name || text,
+    day: parsed.day, month: parsed.month, year: parsed.year,
+    memberId: mentioned[0] || null,
+  });
+  if (!parsed.day || !parsed.month) {
+    toast("Datum nicht eindeutig erkannt – bitte prüfen/ergänzen.");
   }
-
-  const body = el("div", {},
-    el("p", { class: "hint" },
-      "Tippe ins Feld und nutze auf der Tastatur das 🎤-Symbol zum Diktieren – " +
-      "oder tippe den Text einfach ein. Beispiel: „Opa Heinz hat am 14. März Geburtstag“."),
-    field("Geburtstag", input),
-    el("div", { class: "modal-actions" },
-      el("button", { class: "btn primary", onclick: next }, "Weiter"),
-    ),
-  );
-  openModal("🎂 Geburtstag diktieren", body);
-  // Fokus setzen, damit die Tastatur (mit Mikrofon) direkt aufgeht.
-  setTimeout(() => input.focus(), 150);
+  return true;
 }
 
 // Eine Geburtstags-Listenzeile (in mehreren Kalender-Abschnitten genutzt).
@@ -723,13 +709,6 @@ function renderInbox(root) {
     "Elternbriefen oder Post. Per KI automatisch erkennen lassen oder in Ruhe selbst umwandeln.");
   root.append(intro);
 
-  root.append(
-    el("div", { class: "card" },
-      el("p", { class: "hint" }, "🎤 Geburtstag diktieren, z. B. „Oma Erika hat am 3. Mai Geburtstag“."),
-      el("button", { class: "btn primary block", onclick: () => startBirthdaySpeechCapture() }, "🎤 Geburtstag per Sprache hinzufügen"),
-    )
-  );
-
   // Über den iOS-Kurzbefehl geöffnet (?import=1): geteilten Text aus der
   // Zwischenablage übernehmen. Der Knopfdruck liefert die nötige Nutzer-Geste,
   // damit Safari die Zwischenablage lesen darf.
@@ -752,7 +731,7 @@ function renderInbox(root) {
     root.append(importCard);
   }
 
-  const text = el("textarea", { class: "input", rows: "3", placeholder: "z. B. „Mittwoch Sportzeug für Lea“ oder Text aus WhatsApp einfügen…" });
+  const text = el("textarea", { class: "input", rows: "3", placeholder: "z. B. „Mittwoch Sportzeug für Lea“, „Oma Erika hat am 3. Mai Geburtstag“ oder Text aus WhatsApp einfügen…\n(Tipp: per Tastatur-Mikrofon 🎤 diktieren)" });
   const addBtn = el("button", { class: "btn", onclick: () => {
     const t = text.value.trim();
     if (!t) return;
@@ -777,6 +756,9 @@ function renderInbox(root) {
   const aiBtn = el("button", { class: "btn primary", type: "button", onclick: () => {
     const t = text.value.trim();
     if (!t) return;
+    // Geburtstag am Stichwort erkennen und direkt im Geburtstags-Dialog
+    // öffnen (funktioniert auch ohne eingerichtete KI, rein lokal).
+    if (tryBirthdayFromText(t)) { text.value = ""; return; }
     runCapture({ text: t, source: "other" });
     text.value = "";
   }}, "✨ KI: Text erkennen");
