@@ -92,9 +92,20 @@ function eventToVEVENT(event, memberNames) {
   if (event.budget) descParts.push("Budget: " + event.budget);
   if (descParts.length) lines.push(`DESCRIPTION:${escapeText(descParts.join("\n"))}`);
 
-  // Haupt-Erinnerung.
-  if (event.reminderLeadMinutes != null && !start.allDay) {
-    lines.push(...vAlarm(event.reminderLeadMinutes, "Erinnerung: " + event.title));
+  // Haupt-Erinnerung. Bei ganztägigen Terminen einen Alarm um 9:00 am Tag
+  // setzen (DTSTART ist Mitternacht -> +9 Std), sonst zur Vorlaufzeit.
+  if (event.reminderLeadMinutes != null) {
+    if (start.allDay) {
+      lines.push(
+        "BEGIN:VALARM",
+        "ACTION:DISPLAY",
+        `DESCRIPTION:${escapeText("Erinnerung: " + event.title)}`,
+        "TRIGGER:PT9H",
+        "END:VALARM",
+      );
+    } else {
+      lines.push(...vAlarm(event.reminderLeadMinutes, "Erinnerung: " + event.title));
+    }
   }
   // Je Vorbereitungs-Schritt mit Vorlauftagen ein eigener Alarm.
   (event.prep || []).forEach((p) => {

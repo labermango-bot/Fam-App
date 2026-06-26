@@ -69,8 +69,14 @@ button { font-family: inherit; cursor: pointer; }
 .list-sub { font-size: 13px; color: var(--muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .day-divider { font-size: 13px; font-weight: 600; color: var(--tint); margin: 14px 4px 6px; }
 
-.time-col { min-width: 52px; text-align: center; }
+.time-col { min-width: 52px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
 .time { font-weight: 700; font-size: 15px; }
+.date-dow { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+.date-day { font-size: 19px; font-weight: 700; }
+/* Abgelaufene Termine abdunkeln (wie im iOS-Kalender). */
+.list-row.past { opacity: .5; }
+/* Terminsuche */
+.cal-search { margin: 4px 0 10px; }
 
 .person-pill { color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
 .event-loc { color: var(--tint); text-decoration: none; }

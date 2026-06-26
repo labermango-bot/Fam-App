@@ -155,6 +155,18 @@ const relativeDay = (iso) => {
   return fmtDate(iso);
 };
 
+// Ist ein Termin bereits vorbei? Berücksichtigt die Uhrzeit: ein Termin heute
+// früher am Tag gilt als vergangen; ganztägige Termine erst nach Tagesende.
+// (Für „abgelaufene Termine ausblenden/abdunkeln" — mehr wie der iOS-Kalender.)
+function eventIsPast(e) {
+  if (!e || !e.date) return false;
+  const [y, m, d] = e.date.split("-").map(Number);
+  const now = new Date();
+  if (!e.time) return new Date(y, m - 1, d, 23, 59, 59) < now;
+  const [hh, mm] = (e.endTime || e.time).split(":").map(Number);
+  return new Date(y, m - 1, d, hh, mm, 0) < now;
+}
+
 // Universeller Google-Maps-Routen-Link: öffnet auf dem iPhone die Google-Maps-
 // App (falls installiert, sonst die Karte im Browser) mit Route zum Ziel.
 const mapsUrl = (location) =>
@@ -561,7 +573,7 @@ function memberStatusLabel(m, events) {
 
 function renderToday(root) {
   const events = [...store.events()].sort(sortEvents);
-  const upcoming = events.filter((e) => daysFromToday(e.date) >= 0).slice(0, 12);
+  const upcoming = events.filter((e) => !eventIsPast(e)).slice(0, 12);
   const inboxCount = store.inbox().filter((i) => !i.processed).length;
   const { level, alerts } = familyStatus(events, store.todos());
 
@@ -971,6 +983,7 @@ function convertInbox(item, type) {
 // ---------------------------------------------------------------------------
 let calCursor = todayISO();
 let calView = "month"; // "month" | "week"
+let calQuery = ""; // Suchtext für die Terminsuche
 
 const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 function startOfWeek(iso) {
@@ -1080,6 +1093,30 @@ function openCalImportReview(parsed) {
   openModal("Termine aus iOS-Kalender", body);
 }
 
+// Aktualisiert die Suchergebnisse in-place (ohne Full-Render, damit das
+// Eingabefeld den Fokus behält). Bei leerer Suche wird der normale Kalender-
+// Inhalt wieder eingeblendet.
+function updateCalSearch(results, content) {
+  const q = calQuery.trim().toLowerCase();
+  results.innerHTML = "";
+  if (!q) { content.style.display = ""; return; }
+  content.style.display = "none";
+  const matches = store.events()
+    .filter(passesFilter)
+    .filter((e) => `${e.title} ${e.location || ""} ${e.notes || ""}`.toLowerCase().includes(q))
+    .sort(sortEvents);
+  const sec = section(`🔍 ${matches.length} Treffer`);
+  if (!matches.length) sec.append(el("p", { class: "muted small" }, "Keine Termine gefunden."));
+  else {
+    let last = null;
+    matches.forEach((e) => {
+      if (e.date !== last) { sec.append(el("div", { class: "day-divider" }, fmtDate(e.date))); last = e.date; }
+      sec.append(eventRow(e, { showDate: true, past: eventIsPast(e) }));
+    });
+  }
+  results.append(sec);
+}
+
 function renderCalendar(root) {
   root.append(viewToggle());
 
@@ -1101,18 +1138,26 @@ function renderCalendar(root) {
     ));
   }
 
-  if (calView === "week") return renderWeek(root);
+  // Suchfeld: durchsucht ALLE Termine (Titel, Ort, Notizen) datumsübergreifend.
+  const results = el("div", { class: "cal-results" });
+  const content = el("div", {});
+  const search = el("input", { class: "input cal-search", type: "search", value: calQuery,
+    placeholder: "🔍 Termine durchsuchen …",
+    oninput: (ev) => { calQuery = ev.target.value; updateCalSearch(results, content); } });
+  root.append(search, results, content);
 
-  attachSwipe(root, () => shiftMonth(1), () => shiftMonth(-1));
+  if (calView === "week") { renderWeek(content); updateCalSearch(results, content); return; }
+
+  attachSwipe(content, () => shiftMonth(1), () => shiftMonth(-1));
 
   const cursor = parseISO(calCursor);
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
 
-  root.append(calNav(`${MONTHS[month]} ${year}`, () => shiftMonth(-1), () => shiftMonth(1)));
+  content.append(calNav(`${MONTHS[month]} ${year}`, () => shiftMonth(-1), () => shiftMonth(1)));
 
   // Personen-Filter (Chips)
-  root.append(renderMemberFilter());
+  content.append(renderMemberFilter());
 
   const grid = el("div", { class: "cal-grid" });
   WEEKDAYS.slice(1).concat(WEEKDAYS[0]).forEach((w) =>
@@ -1147,20 +1192,30 @@ function renderCalendar(root) {
     );
     grid.append(cell);
   }
-  root.append(grid);
+  content.append(grid);
 
   // Reihenfolge unter dem Kalender: zuerst die Termine, dann die Geburtstage
   // dieses Monats, einklappbar alle weiteren Geburtstage, zuletzt die Ferien.
 
-  // 1) Termine im aktuell angezeigten Monat
+  // 1) Termine im aktuell angezeigten Monat — nach Tagen gruppiert (Tagestrenner
+  //    mit Datum, damit man wie im iOS-Kalender sieht, wann ein Termin ist).
   const monthEvents = store.events()
     .filter((e) => e.date.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`))
     .filter(passesFilter)
     .sort(sortEvents);
   const evSec = section("📅 Termine im Monat");
   if (!monthEvents.length) evSec.append(emptyState("Keine Termine in diesem Monat.", null));
-  else monthEvents.forEach((e) => evSec.append(eventRow(e)));
-  root.append(evSec);
+  else {
+    let lastDate = null;
+    monthEvents.forEach((e) => {
+      if (e.date !== lastDate) {
+        evSec.append(el("div", { class: "day-divider" }, fmtDate(e.date)));
+        lastDate = e.date;
+      }
+      evSec.append(eventRow(e, { past: eventIsPast(e) }));
+    });
+  }
+  content.append(evSec);
 
   // 2) Geburtstage in diesem Monat
   const monthBdays = store.birthdays()
@@ -1170,11 +1225,11 @@ function renderCalendar(root) {
   const bMonthSec = section("🎂 Geburtstage im Monat");
   if (!monthBdays.length) bMonthSec.append(el("p", { class: "muted small" }, "Keine Geburtstage in diesem Monat."));
   else monthBdays.forEach(({ b, iso }) => bMonthSec.append(birthdayRow(b, iso)));
-  root.append(bMonthSec);
+  content.append(bMonthSec);
 
   // 3) Alle Geburtstage (einklappbar) + neuen anlegen
   const allB = collapsibleSection("🎂 Alle Geburtstage", "allBirthdays");
-  root.append(allB.sec);
+  content.append(allB.sec);
   if (!allB.collapsed) {
     const upBdays = upcomingBirthdays(todayISO(), 366);
     if (!upBdays.length) allB.body.append(el("p", { class: "muted small" }, "Noch keine Geburtstage eingetragen."));
@@ -1186,7 +1241,7 @@ function renderCalendar(root) {
   const holidays = upcomingHolidays(todayISO(), 4);
   if (holidays.length) {
     const fSec = collapsibleSection("🏖 Schulferien (BW)", "holidays");
-    root.append(fSec.sec);
+    content.append(fSec.sec);
     if (!fSec.collapsed) {
       holidays.forEach((h) => {
         const running = todayISO() >= h.start && todayISO() <= h.end;
@@ -1202,7 +1257,8 @@ function renderCalendar(root) {
     }
   }
 
-  root.append(fab(() => openEventDialog()));
+  content.append(fab(() => openEventDialog()));
+  updateCalSearch(results, content);
 }
 
 // Wochenansicht: Mo–So, pro Tag die Termine (gefiltert), mit Ferien-Hinweis.
@@ -1583,6 +1639,24 @@ function renderFamily(root) {
   sec.append(el("button", { class: "btn block", onclick: () => openMemberDialog() }, "+ Person hinzufügen"));
   root.append(sec);
 
+  // Erinnerungen
+  const remSec = section("🔔 Erinnerungen");
+  if (!("Notification" in window)) {
+    remSec.append(el("p", { class: "hint small" },
+      "Benachrichtigungen sind hier nicht verfügbar. Tipp: FamOrga über „Teilen → Zum Home-Bildschirm“ als App installieren (iOS 16.4+)."));
+  } else if (remindersEnabled()) {
+    remSec.append(el("div", { class: "card" },
+      el("div", { class: "list-title" }, "✅ Erinnerungen aktiv"),
+      el("p", { class: "hint small" }, "FamOrga meldet Termine zur eingestellten Vorlaufzeit, solange die App geöffnet ist oder im Hintergrund läuft. Für Erinnerungen bei komplett geschlossener App den Termin zusätzlich in den iOS-Kalender übernehmen."),
+    ));
+  } else {
+    remSec.append(
+      el("p", { class: "hint small" }, "Lass dich an Termine erinnern (zur Vorlaufzeit des Termins)."),
+      el("button", { class: "btn primary block", onclick: enableReminders }, "🔔 Erinnerungen aktivieren"),
+    );
+  }
+  root.append(remSec);
+
   const tools = section("Daten");
   tools.append(
     el("button", { class: "btn block", onclick: exportAllICS }, "📅 Alle Termine als iOS-Kalender (.ics)"),
@@ -1678,12 +1752,17 @@ function sortEvents(a, b) {
   return (a.time || "99:99").localeCompare(b.time || "99:99");
 }
 
-function eventRow(e) {
+// opts.showDate: zeigt links zusätzlich Wochentag + Tag (für Listen über
+// mehrere Tage, z. B. Suche). opts.past: Termin ist vorbei -> abgedunkelt.
+function eventRow(e, opts = {}) {
   const members = (e.memberIds || []).map((id) => store.member(id)).filter(Boolean);
   const openPrep = (e.prep || []).filter((p) => !p.done).length;
   const bringCount = (e.bring || []).length;
-  return el("div", { class: "list-row event", onclick: () => openEventDialog(e) },
+  const dt = parseISO(e.date);
+  return el("div", { class: "list-row event" + (opts.past ? " past" : ""), onclick: () => openEventDialog(e) },
     el("div", { class: "time-col" },
+      opts.showDate ? el("span", { class: "date-dow" }, WEEKDAYS[dt.getDay()]) : null,
+      opts.showDate ? el("span", { class: "date-day" }, String(dt.getDate())) : null,
       e.time ? el("span", { class: "time" }, e.time) : el("span", { class: "time muted" }, "ganzt."),
     ),
     el("div", { class: "list-main" },
@@ -2230,6 +2309,92 @@ function handleSharedText() {
 }
 
 // ---------------------------------------------------------------------------
+// Erinnerungen (Termin-Benachrichtigungen)
+//
+// Hinweis: iOS kann eine App-Benachrichtigung nur dann anzeigen, wenn FamOrga
+// als App vom Home-Bildschirm installiert ist (iOS 16.4+). Echte Hintergrund-
+// Erinnerungen bei vollständig geschlossener App liefert iOS nur über den
+// iOS-Kalender selbst — deshalb tragen exportierte/abonnierte Termine eigene
+// Alarme (.ics). Diese In-App-Erinnerung greift, solange FamOrga geöffnet ist
+// oder im Hintergrund läuft, und meldet fällige Termine zuverlässig nach.
+// ---------------------------------------------------------------------------
+const NOTIFIED_KEY = "famorga.notified";
+function loadNotified() {
+  try { return new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || "[]")); }
+  catch (e) { return new Set(); }
+}
+function saveNotified(set) {
+  // Nur die letzten Einträge behalten, damit der Speicher nicht wächst.
+  try { localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...set].slice(-300))); } catch (e) {}
+}
+
+function remindersEnabled() {
+  return "Notification" in window && Notification.permission === "granted";
+}
+
+// Fragt die Benachrichtigungs-Erlaubnis an (muss aus einer Nutzer-Geste
+// kommen, daher Knopf in den Einstellungen).
+async function enableReminders() {
+  if (!("Notification" in window)) {
+    alert("Dieser Browser/dieses Gerät unterstützt keine Benachrichtigungen. Tipp: FamOrga über „Teilen → Zum Home-Bildschirm“ als App installieren.");
+    return;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm === "granted") { toast("🔔 Erinnerungen aktiviert"); checkReminders(); }
+    else alert("Erinnerungen wurden nicht erlaubt. Du kannst sie in den iOS-Einstellungen unter FamOrga → Mitteilungen aktivieren.");
+  } catch (e) {
+    alert("Benachrichtigungen konnten nicht aktiviert werden.");
+  }
+  render();
+}
+
+async function showReminderNotification(title, body, tag) {
+  try {
+    if (navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(title, { body, tag, icon: "./icons/icon.svg", badge: "./icons/icon.svg" });
+      return;
+    }
+  } catch (e) { /* Fallback unten */ }
+  try { new Notification(title, { body, tag }); } catch (e) {}
+}
+
+// Prüft fällige Termin-Erinnerungen und benachrichtigt einmalig je Termin.
+function checkReminders() {
+  if (!remindersEnabled()) return;
+  const now = Date.now();
+  const notified = loadNotified();
+  let changed = false;
+  store.events().forEach((e) => {
+    if (!e.date || e.reminderLeadMinutes == null) return;
+    const key = "ev:" + e.id;
+    if (notified.has(key)) return;
+    const [y, m, d] = e.date.split("-").map(Number);
+    // Ganztägige Termine: 9:00 Uhr als Bezugszeit.
+    const [hh, mm] = e.time ? e.time.split(":").map(Number) : [9, 0];
+    const start = new Date(y, m - 1, d, hh, mm, 0).getTime();
+    const remindAt = start - e.reminderLeadMinutes * 60000;
+    // Fenster: ab Erinnerungszeitpunkt bis 1 Std nach Start (damit lange
+    // zurückliegende Termine nicht nachträglich aufpoppen).
+    if (now >= remindAt && now <= start + 3600000) {
+      const when = e.time ? `${relativeDay(e.date)}, ${e.time} Uhr` : relativeDay(e.date);
+      showReminderNotification("⏰ " + e.title, when + (e.location ? " · " + e.location : ""), key);
+      notified.add(key);
+      changed = true;
+    }
+  });
+  if (changed) saveNotified(notified);
+}
+
+function startReminderLoop() {
+  checkReminders();
+  setInterval(checkReminders, 60000); // jede Minute prüfen, solange App offen ist
+  // Beim Zurückkehren in die App sofort prüfen (iOS „weckt" die Seite hier).
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkReminders(); });
+}
+
+// ---------------------------------------------------------------------------
 // Service Worker (Offline-Fähigkeit)
 // ---------------------------------------------------------------------------
 if ("serviceWorker" in navigator) {
@@ -2253,3 +2418,4 @@ if ("serviceWorker" in navigator) {
 initSync();
 render();
 handleSharedText();
+startReminderLoop();

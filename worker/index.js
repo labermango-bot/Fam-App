@@ -390,8 +390,18 @@ function eventToVEVENT(event, memberNames) {
   }
   if (event.budget) descParts.push("Budget: " + event.budget);
   if (descParts.length) lines.push(`DESCRIPTION:${escapeText(descParts.join("\n"))}`);
-  if (event.reminderLeadMinutes != null && !start.allDay) {
-    lines.push(...vAlarm(event.reminderLeadMinutes, "Erinnerung: " + event.title));
+  if (event.reminderLeadMinutes != null) {
+    if (start.allDay) {
+      lines.push(
+        "BEGIN:VALARM",
+        "ACTION:DISPLAY",
+        `DESCRIPTION:${escapeText("Erinnerung: " + event.title)}`,
+        "TRIGGER:PT9H",
+        "END:VALARM",
+      );
+    } else {
+      lines.push(...vAlarm(event.reminderLeadMinutes, "Erinnerung: " + event.title));
+    }
   }
   (event.prep || []).forEach((p) => {
     if (p.leadDays && !p.done) lines.push(...vAlarm(p.leadDays * 24 * 60, "Vorbereiten: " + p.text));
