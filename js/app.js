@@ -4,6 +4,7 @@ import { buildICS, downloadICS } from "./ics.js";
 import { classifyCapture, aiConfigured, fileToDataURL } from "./ai.js";
 import { initSync, feedUrl } from "./sync.js";
 import { holidayOn, upcomingHolidays } from "./ferien-bw.js";
+import { DEFAULT_SHORTCUT_NAME, shortcutURL, shortcutSetupSteps } from "./ioscal.js";
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -409,7 +410,7 @@ function renderHeader(tab) {
     el("h1", {}, titles[tab]),
   );
   if (tab === "calendar") {
-    header.append(el("button", { class: "icon-btn", title: "In iOS-Kalender exportieren", onclick: exportAllICS }, "📤"));
+    header.append(el("button", { class: "icon-btn", title: "In iOS-Kalender übertragen", onclick: transferPendingToIOS }, "📤"));
   }
   return header;
 }
@@ -1657,6 +1658,8 @@ function renderFamily(root) {
   }
   root.append(remSec);
 
+  root.append(renderIOSCalendarSettings());
+
   const tools = section("Daten");
   tools.append(
     el("button", { class: "btn block", onclick: exportAllICS }, "📅 Alle Termine als iOS-Kalender (.ics)"),
@@ -1677,6 +1680,29 @@ function renderFamily(root) {
     el("p", {}, "Tipp: Über das Teilen-Symbol in Safari „Zum Home-Bildschirm“ wählen, dann startet die App wie eine normale iPhone-App."),
   );
   root.append(about);
+}
+
+// Einstellungen für die Übertragung in den gemeinsamen iOS-Kalender.
+function renderIOSCalendarSettings() {
+  const { name, ready } = shortcutSettings();
+  const sec = section("📅 iOS-Kalender (gemeinsam)");
+  const nameInput = el("input", { class: "input", value: name });
+  sec.append(el("div", { class: "card" },
+    el("div", { class: "list-title" }, ready ? "✅ Kurzbefehl eingerichtet" : "⚠️ Noch nicht eingerichtet"),
+    el("p", { class: "hint small" },
+      "Termine werden über einen iOS-Kurzbefehl direkt in euren gemeinsamen Kalender geschrieben. In jedem Termin auf „📅 In iOS-Kalender“ tippen, oder im Kalender oben auf 📤 für alle noch nicht übertragenen."),
+    field("Name des Kurzbefehls", nameInput),
+    el("div", { class: "row gap" },
+      el("button", { class: "btn", onclick: () => {
+        store.setMeta({ iosShortcutName: nameInput.value.trim() || DEFAULT_SHORTCUT_NAME });
+        toast("Gespeichert");
+      }}, "Speichern"),
+      el("button", { class: "btn", onclick: () => openIOSSetup() }, "📖 Anleitung"),
+      ready ? el("button", { class: "btn", onclick: () => { store.setMeta({ iosShortcutReady: false }); } }, "Zurücksetzen") : null,
+    ),
+    el("button", { class: "btn block", onclick: transferPendingToIOS }, "📤 Alle künftigen, noch nicht übertragenen Termine übertragen"),
+  ));
+  return sec;
 }
 
 function renderAISettings() {
@@ -1968,6 +1994,8 @@ function openEventDialog(existing = null, onSaved = null) {
     field("Mitbringen", el("div", {}, bringList, addBringBtn)),
     field("Budget", budget),
     field("Notizen", notes),
+    e.iosExportedAt ? el("p", { class: "hint small" },
+      `✅ Am ${new Date(e.iosExportedAt).toLocaleDateString("de-DE")} in den iOS-Kalender übertragen. Spätere Änderungen bitte dort nachtragen.`) : null,
     el("div", { class: "modal-actions" },
       isEdit ? el("button", { class: "btn danger", onclick: deleteEvent }, "Löschen") : null,
       el("button", { class: "btn", onclick: saveAndExport }, "📅 In iOS-Kalender"),
@@ -2022,7 +2050,7 @@ function openEventDialog(existing = null, onSaved = null) {
     }
   }
 
-  // Termin speichern UND als Einzel-.ics für den iOS-Kalender exportieren.
+  // Termin speichern UND in den (gemeinsamen) iOS-Kalender übertragen.
   function saveAndExport() {
     const data = collectData();
     if (!data) return;
@@ -2030,7 +2058,7 @@ function openEventDialog(existing = null, onSaved = null) {
     if (isEdit) { store.updateEvent(e.id, data); ev = store.event(e.id); }
     else { ev = store.addEvent(data); }
     if (onSaved) onSaved();
-    addEventToIOS(ev); // öffnet eigenen Dialog mit antippbarem Kalender-Link
+    addEventToIOS(ev); // Kurzbefehl -> gemeinsamer iOS-Kalender (oder Einrichtung)
   }
 
   openModal(isEdit ? "Termin bearbeiten" : "Neuer Termin", body);
@@ -2222,45 +2250,99 @@ function exportAllICS() {
   if (!events.length) { alert("Noch keine Termine zum Exportieren."); return; }
   downloadICS("Familienkalender", buildICS(events, (id) => store.member(id)));
 }
-function exportOneICS(e) {
-  downloadICS(e.title.replace(/[^\wäöüÄÖÜ ]/g, "") || "Termin", buildICS([e], (id) => store.member(id)));
+
+// ---------------------------------------------------------------------------
+// In den iOS-Kalender übertragen
+// ---------------------------------------------------------------------------
+// Hauptweg: iOS-Kurzbefehl, der die Termine per „Neues Ereignis hinzufügen"
+// direkt in den gemeinsamen Kalender schreibt (siehe ioscal.js). Ist der
+// Kurzbefehl noch nicht eingerichtet, erscheint die Anleitung – plus der
+// .ics-Weg als Ausweichlösung (landet im Standardkalender).
+function shortcutSettings() {
+  const m = store.get().meta || {};
+  return { name: m.iosShortcutName || DEFAULT_SHORTCUT_NAME, ready: !!m.iosShortcutReady };
 }
 
-// Bietet den Termin zum Hinzufügen in den iOS-Kalender an. Rein clientseitig
-// (kein Worker nötig): Auf dem iPhone ist das native Teilen mit einer echten
-// .ics-Datei der zuverlässigste Weg — iOS bietet dann „Zum Kalender
-// hinzufügen". Wo das nicht geht (Desktop/Android), ein antippbarer .ics-Link.
-async function addEventToIOS(ev) {
-  const ics = buildICS([ev], (id) => store.member(id));
-  const filename = ((ev.title || "Termin").replace(/[^\wäöüÄÖÜ ]/g, "").trim() || "Termin") + ".ics";
+function addEventToIOS(evOrList) {
+  const events = (Array.isArray(evOrList) ? evOrList : [evOrList]).filter(Boolean);
+  if (!events.length) return;
+  const already = events.filter((e) => e.iosExportedAt);
+  if (already.length && !confirm(
+    (events.length === 1
+      ? "Dieser Termin wurde schon in den iOS-Kalender übertragen"
+      : `${already.length} dieser Termine wurden schon übertragen`) +
+    ". Erneut übertragen legt dort eine KOPIE an (Änderungen bitte direkt im iOS-Kalender nachtragen).\n\nTrotzdem übertragen?")) return;
+  if (shortcutSettings().ready) runIOSShortcut(events);
+  else openIOSSetup(events);
+}
 
-  // 1) Web Share mit echter Datei — beste iOS-Integration (auch als PWA).
+function runIOSShortcut(events) {
+  const { name } = shortcutSettings();
+  const url = shortcutURL(name, events, (id) => store.member(id));
+  const now = new Date().toISOString();
+  events.forEach((e) => store.updateEvent(e.id, { iosExportedAt: now }));
+  closeModal();
+  toast(events.length === 1 ? "Öffne Kurzbefehl …" : `Übertrage ${events.length} Termine …`);
+  location.href = url;
+}
+
+// Alle künftigen, noch nicht übertragenen Termine auf einmal übertragen.
+function transferPendingToIOS() {
+  const today = todayISO();
+  const pending = store.events()
+    .filter((e) => e.date >= today && !e.iosExportedAt)
+    .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  if (!pending.length) { alert("Alle künftigen Termine sind bereits im iOS-Kalender. 👍"); return; }
+  if (!shortcutSettings().ready) { openIOSSetup(pending); return; }
+  if (confirm(`${pending.length} künftige Termine sind noch nicht im iOS-Kalender. Jetzt übertragen?`)) runIOSShortcut(pending);
+}
+
+function iosSetupSteps(name) {
+  return el("ol", { class: "steps" }, ...shortcutSetupSteps(name).map((t) => el("li", {}, t)));
+}
+
+function openIOSSetup(events = []) {
+  const { name } = shortcutSettings();
+  const body = el("div", {},
+    el("p", { class: "hint" },
+      "Damit Termine direkt in eurem GEMEINSAMEN iOS-Kalender landen, braucht es einmalig einen kleinen Kurzbefehl (ca. 3 Minuten). Danach reicht ein Tipp auf „📅 In iOS-Kalender“."),
+    iosSetupSteps(name),
+    el("button", { class: "btn primary block", onclick: () => {
+      store.setMeta({ iosShortcutReady: true, iosShortcutName: name });
+      if (events.length) runIOSShortcut(events); else { closeModal(); toast("Gespeichert"); }
+    }}, events.length ? "✅ Kurzbefehl ist eingerichtet – jetzt übertragen" : "✅ Kurzbefehl ist eingerichtet"),
+  );
+  if (events.length) {
+    body.append(
+      el("p", { class: "hint small" },
+        "Ausweichweg ohne Kurzbefehl: als .ics-Datei öffnen. iOS legt den Termin dann im Standardkalender ab – stell dazu unter Einstellungen → Apps → Kalender → Standardkalender euren gemeinsamen Kalender ein."),
+      el("button", { class: "btn block", onclick: () => addEventsViaICS(events) }, "📄 Stattdessen als .ics-Datei"),
+    );
+  }
+  openModal("In iOS-Kalender übertragen", body);
+}
+
+// Ausweichweg: .ics über das Teilen-Menü bzw. als antippbarer Link.
+async function addEventsViaICS(events) {
+  const ics = buildICS(events, (id) => store.member(id));
+  const base = events.length === 1 ? (events[0].title || "Termin") : "Familienkalender";
+  const filename = (base.replace(/[^\wäöüÄÖÜ ]/g, "").trim() || "Termin") + ".ics";
   try {
     if (navigator.canShare) {
       const file = new File([ics], filename, { type: "text/calendar" });
       if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: ev.title || "Termin" });
+        await navigator.share({ files: [file], title: base });
         closeModal();
         return;
       }
     }
   } catch (err) {
-    // Nutzer hat abgebrochen o.ä. — Dialog schließen, kein Fehler.
-    if (err && err.name === "AbortError") { closeModal(); return; }
-    // sonst auf den Link-Fallback unten zurückfallen.
+    if (err && err.name === "AbortError") return;
   }
-
-  // 2) Fallback: antippbarer Link (Blob), öffnet die Kalender-Vorschau.
-  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const body = el("div", {},
-    el("p", { class: "hint" }, "Der Termin ist in FamOrga gespeichert. Zum Übernehmen in den iOS-Kalender tippen – iOS zeigt dann „Hinzufügen“ und legt ihn in deinem Standardkalender ab."),
-    el("a", { class: "btn primary block", href: url, target: "_blank", rel: "noopener", download: filename,
-      onclick: () => { setTimeout(() => { URL.revokeObjectURL(url); closeModal(); }, 1500); } },
-      "📅 Jetzt zum iOS-Kalender hinzufügen"),
-  );
-  openModal("In iOS-Kalender übernehmen", body);
+  downloadICS(filename, ics);
+  closeModal();
 }
+
 function exportBackup() {
   const blob = new Blob([store.exportJSON()], { type: "application/json" });
   const a = document.createElement("a");

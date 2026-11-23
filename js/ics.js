@@ -56,6 +56,30 @@ function vAlarm(triggerMinutesBefore, description) {
   ];
 }
 
+// Titel inkl. der beteiligten Personen, z. B. "Fußball (Max, Lea)".
+export function eventSummary(event, memberNames = []) {
+  const people = memberNames.length ? ` (${memberNames.join(", ")})` : "";
+  return (event.title || "Termin") + people;
+}
+
+// Notizen + offene Vorbereitungs-Schritte + Mitbringen + Budget als Klartext
+// (für .ics-Beschreibung und den iOS-Kurzbefehl).
+export function eventDescription(event) {
+  const descParts = [];
+  if (event.notes) descParts.push(event.notes);
+  const openPrep = (event.prep || []).filter((p) => !p.done);
+  if (openPrep.length) {
+    descParts.push("Vorbereiten:");
+    openPrep.forEach((p) => descParts.push("- " + p.text));
+  }
+  if ((event.bring || []).length) {
+    descParts.push("Mitbringen:");
+    event.bring.forEach((b) => descParts.push("- " + b.text));
+  }
+  if (event.budget) descParts.push("Budget: " + event.budget);
+  return descParts.join("\n");
+}
+
 function eventToVEVENT(event, memberNames) {
   const start = toICSDateTime(event.date, event.time);
   const lines = ["BEGIN:VEVENT", `UID:${event.id}@famorga`];
@@ -72,25 +96,12 @@ function eventToVEVENT(event, memberNames) {
     }
   }
 
-  const people = memberNames.length ? ` (${memberNames.join(", ")})` : "";
-  lines.push(`SUMMARY:${escapeText(event.title + people)}`);
+  lines.push(`SUMMARY:${escapeText(eventSummary(event, memberNames))}`);
 
   if (event.location) lines.push(`LOCATION:${escapeText(event.location)}`);
 
-  // Notizen + offene Vorbereitungs-Schritte in die Beschreibung packen.
-  const descParts = [];
-  if (event.notes) descParts.push(event.notes);
-  const openPrep = (event.prep || []).filter((p) => !p.done);
-  if (openPrep.length) {
-    descParts.push("Vorbereiten:");
-    openPrep.forEach((p) => descParts.push("- " + p.text));
-  }
-  if ((event.bring || []).length) {
-    descParts.push("Mitbringen:");
-    event.bring.forEach((b) => descParts.push("- " + b.text));
-  }
-  if (event.budget) descParts.push("Budget: " + event.budget);
-  if (descParts.length) lines.push(`DESCRIPTION:${escapeText(descParts.join("\n"))}`);
+  const desc = eventDescription(event);
+  if (desc) lines.push(`DESCRIPTION:${escapeText(desc)}`);
 
   // Haupt-Erinnerung. Bei ganztägigen Terminen einen Alarm um 9:00 am Tag
   // setzen (DTSTART ist Mitternacht -> +9 Std), sonst zur Vorlaufzeit.

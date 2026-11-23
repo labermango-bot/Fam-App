@@ -8,7 +8,7 @@
 //
 // (Früher war es cache-first; dadurch blieben Geräte hartnäckig auf einer
 // alten Version hängen.)
-const CACHE = "famorga-v39";
+const CACHE = "famorga-v40";
 const ASSETS = [
   "./",
   "./index.html",
@@ -18,6 +18,7 @@ const ASSETS = [
   "./js/ics.js",
   "./js/ai.js",
   "./js/sync.js",
+  "./js/ioscal.js",
   "./js/ferien-bw.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",

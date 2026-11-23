@@ -330,3 +330,7 @@ select.input { -webkit-appearance: none; appearance: none; }
   .modal { align-self: center; border-radius: 20px; margin: auto; }
   .modal-overlay { align-items: center; }
 }
+
+/* Nummerierte Schritt-Anleitung (z. B. Kurzbefehl-Einrichtung) */
+.steps { margin: 0 0 14px; padding-left: 22px; font-size: 14px; line-height: 1.45; }
+.steps li { margin-bottom: 8px; }

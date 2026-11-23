@@ -61,13 +61,26 @@ npx serve .
 Dann `http://localhost:8000` öffnen. Für die echte Nutzung auf dem iPhone die
 Dateien z. B. auf GitHub Pages, Netlify oder einen kleinen Webspace legen.
 
-## Termine in den iOS-Kalender übernehmen
+## Termine in den gemeinsamen iOS-Kalender übertragen
 
-- **Ein Termin:** im Termin-Dialog auf **„📤 .ics“**.
-- **Alle Termine:** im Kalender oben rechts auf **📤** (oder unter *Familie → Daten*).
+Eine Web-App darf nicht selbst in den iOS-Kalender schreiben – die
+**Kurzbefehle-App** schon, und zwar in einen fest gewählten Kalender (z. B. den
+mit dem Partner geteilten). FamOrga übergibt die Termine deshalb an einen
+kleinen Kurzbefehl („FamOrga Termin“), der sie per *Neues Ereignis hinzufügen*
+dort einträgt.
 
-Die heruntergeladene `.ics`-Datei in „Dateien“ oder per Mail antippen →
-**„Zum Kalender hinzufügen“**. Erinnerung und Vorbereitungs-Alarme sind enthalten.
+- **Einmalig einrichten:** *Familie → 📅 iOS-Kalender (gemeinsam) → 📖 Anleitung*
+  (ca. 3 Minuten, Schritt für Schritt in der App beschrieben).
+- **Ein Termin:** im Termin-Dialog auf **„📅 In iOS-Kalender“**.
+- **Alle künftigen, noch nicht übertragenen:** im Kalender oben rechts auf **📤**.
+- Wer jeden Termin vorher sehen/bestätigen will, schaltet in der Kurzbefehl-Aktion
+  das Bearbeitungsfenster ein.
+- Übertragene Termine werden markiert; ein erneutes Übertragen würde eine Kopie
+  anlegen (FamOrga fragt vorher nach). Spätere Änderungen direkt im iOS-Kalender
+  nachtragen.
+- **Ausweichweg ohne Kurzbefehl:** `.ics`-Datei (landet im *Standardkalender* –
+  dafür unter Einstellungen → Kalender den gemeinsamen Kalender als Standard wählen).
+  Alle Termine als `.ics`: *Familie → Daten*.
 
 ## KI-Erkennung aus Foto/Screenshot/Text (optional)
 
@@ -126,6 +139,7 @@ deshalb gibt es unter *Familie → Daten* den Export einer Sicherungsdatei.
 - Reines **Vanilla JavaScript** (ES-Module), **kein** Framework, **kein** Build.
 - `js/store.js` – Datenmodell & Speicherung (localStorage)
 - `js/ics.js` – iCalendar-Export (RFC 5545, inkl. `VALARM`)
+- `js/ioscal.js` – Übergabe an den iOS-Kurzbefehl (gemeinsamer Kalender)
 - `js/ai.js` – Anbindung an den Worker für die KI-Erkennung (optional)
 - `js/sync.js` – Spiegelt Termine an den Worker für den Kalender-Abo-Feed (optional)
 - `js/app.js` – Oberfläche & Steuerung
