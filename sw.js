@@ -8,7 +8,7 @@
 //
 // (Früher war es cache-first; dadurch blieben Geräte hartnäckig auf einer
 // alten Version hängen.)
-const CACHE = "famorga-v40";
+const CACHE = "famorga-v41";
 const ASSETS = [
   "./",
   "./index.html",

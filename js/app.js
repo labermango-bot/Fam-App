@@ -4,7 +4,7 @@ import { buildICS, downloadICS } from "./ics.js";
 import { classifyCapture, aiConfigured, fileToDataURL } from "./ai.js";
 import { initSync, feedUrl } from "./sync.js";
 import { holidayOn, upcomingHolidays } from "./ferien-bw.js";
-import { DEFAULT_SHORTCUT_NAME, shortcutURL, shortcutSetupSteps } from "./ioscal.js";
+import { DEFAULT_SHORTCUT_NAME, shortcutURL, shortcutSetupSteps, testEvent } from "./ioscal.js";
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -1698,6 +1698,7 @@ function renderIOSCalendarSettings() {
         toast("Gespeichert");
       }}, "Speichern"),
       el("button", { class: "btn", onclick: () => openIOSSetup() }, "📖 Anleitung"),
+      el("button", { class: "btn", onclick: sendIOSTest }, "🧪 Test"),
       ready ? el("button", { class: "btn", onclick: () => { store.setMeta({ iosShortcutReady: false }); } }, "Zurücksetzen") : null,
     ),
     el("button", { class: "btn block", onclick: transferPendingToIOS }, "📤 Alle künftigen, noch nicht übertragenen Termine übertragen"),
@@ -2298,7 +2299,14 @@ function transferPendingToIOS() {
 }
 
 function iosSetupSteps(name) {
-  return el("ol", { class: "steps" }, ...shortcutSetupSteps(name).map((t) => el("li", {}, t)));
+  return el("ol", { class: "steps" }, ...shortcutSetupSteps(name).map((st) =>
+    el("li", {}, el("strong", {}, st.title), el("ul", {}, ...st.items.map((t) => el("li", {}, t))))));
+}
+
+// Schickt einen Beispieltermin an den Kurzbefehl (ohne ihn in FamOrga zu speichern).
+function sendIOSTest() {
+  const { name } = shortcutSettings();
+  location.href = shortcutURL(name, [testEvent()], () => null);
 }
 
 function openIOSSetup(events = []) {
@@ -2307,6 +2315,7 @@ function openIOSSetup(events = []) {
     el("p", { class: "hint" },
       "Damit Termine direkt in eurem GEMEINSAMEN iOS-Kalender landen, braucht es einmalig einen kleinen Kurzbefehl (ca. 3 Minuten). Danach reicht ein Tipp auf „📅 In iOS-Kalender“."),
     iosSetupSteps(name),
+    el("button", { class: "btn block", onclick: sendIOSTest }, "🧪 Test-Termin senden"),
     el("button", { class: "btn primary block", onclick: () => {
       store.setMeta({ iosShortcutReady: true, iosShortcutName: name });
       if (events.length) runIOSShortcut(events); else { closeModal(); toast("Gespeichert"); }

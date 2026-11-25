@@ -62,15 +62,53 @@ export function shortcutURL(name, events, memberLookup) {
 }
 
 // Schritt-für-Schritt-Anleitung (einmalig in der Kurzbefehle-App bauen).
+// Jeder Schritt: Überschrift + einzelne Taps.
 export function shortcutSetupSteps(name) {
+  const FELD = (feld, key) =>
+    `„${feld}“: Feld antippen → über der Tastatur „Wiederholungsobjekt“ wählen → die blaue Blase „Wiederholungsobjekt“ nochmals antippen → Typ „Wörterbuch“ → bei „Schlüssel“ ${key} eintippen → „Fertig“.`;
   return [
-    `Kurzbefehle-App öffnen → „+“ → oben den Namen exakt „${name}“ eingeben.`,
-    "Aktion „Wörterbuch abrufen“ hinzufügen → als Eingabe „Kurzbefehl-Eingabe“ wählen.",
-    "Aktion „Wörterbuchwert abrufen“ hinzufügen → Wert für Schlüssel „termine“ im Wörterbuch.",
-    "Aktion „Mit jedem wiederholen“ hinzufügen (wiederholt mit jedem Objekt im Wörterbuchwert).",
-    "Innerhalb der Wiederholung: Aktion „Neues Ereignis hinzufügen“. Dort als Kalender euren GEMEINSAMEN Kalender auswählen.",
-    "Felder befüllen: jeweils auf das Feld tippen → Variable „Wiederholungsobjekt“ wählen → diese Variable nochmals antippen, als Typ „Wörterbuch“ wählen und den Schlüssel eintragen: Titel = „titel“, Startdatum = „start“, Enddatum = „ende“, Ort = „ort“, Notizen = „notizen“.",
-    "Optional: „Ganztägig“ ebenso mit Schlüssel „ganztaegig“ belegen, eine Benachrichtigung (z. B. 1 Stunde vorher) wählen und – wenn du jeden Termin vor dem Speichern sehen/bestätigen willst – unter „Mehr anzeigen“ das Anzeigen des Bearbeitungsfensters einschalten.",
-    "Fertig. Beim ersten Start fragt iOS einmalig, ob der Kurzbefehl auf den Kalender zugreifen darf → „Erlauben“.",
+    { title: "Neuen Kurzbefehl anlegen", items: [
+      "Kurzbefehle-App öffnen → unten rechts bzw. oben „+“.",
+      `Oben auf den Namen tippen → „Umbenennen“ → exakt „${name}“ eingeben.`,
+    ]},
+    { title: "Aktion 1: Wörterbuchwert", items: [
+      "Unten ins Suchfeld „Wörterbuchwert“ tippen → „Wörterbuchwert abrufen“ antippen.",
+      "Es erscheint: „Wert für Schlüssel in Wörterbuch abrufen“.",
+      "Auf das hellblaue „Schlüssel“ tippen → termine eintippen.",
+      "Auf das hellblaue „Wörterbuch“ tippen → „Kurzbefehl-Eingabe“ wählen. (Oben erscheint dann ein Block „Empfangen … Eingabe“ – den einfach so lassen.)",
+    ]},
+    { title: "Aktion 2: Wiederholen", items: [
+      "Im Suchfeld „Mit jedem wiederholen“ suchen und antippen.",
+      "Es erscheint „Mit jedem Objekt in Wörterbuchwert wiederholen“ und darunter „Ende der Wiederholung“.",
+    ]},
+    { title: "Aktion 3: Ereignis anlegen", items: [
+      "Im Suchfeld „Ereignis“ suchen → die rote Kalender-Aktion „Neues Ereignis hinzufügen“ (je nach iOS „Ereignis erstellen“) antippen.",
+      "Die Aktion landet ganz unten. Gedrückt halten und nach oben ziehen, sodass sie ZWISCHEN „Mit jedem … wiederholen“ und „Ende der Wiederholung“ steht (sie wird dann eingerückt).",
+      "In der Aktion auf den Kalender (z. B. „Kalender“) tippen → euren GEMEINSAMEN Kalender auswählen.",
+    ]},
+    { title: "Felder der Ereignis-Aktion verknüpfen (5×)", items: [
+      FELD("Ereignis/Titel", "titel"),
+      FELD("Startdatum", "start"),
+      FELD("Enddatum", "ende"),
+      "Auf den Pfeil „>“ bzw. „Mehr anzeigen“ der Aktion tippen, dann:",
+      FELD("Ort", "ort"),
+      FELD("Notizen", "notizen"),
+    ]},
+    { title: "Optional", items: [
+      "Unter „Mehr anzeigen“ eine Benachrichtigung wählen (z. B. 1 Stunde vorher).",
+      "Wenn du jeden Termin vor dem Speichern sehen/bestätigen willst: dort den Schalter zum Anzeigen/Bearbeiten vor dem Hinzufügen einschalten.",
+    ]},
+    { title: "Testen", items: [
+      "Oben auf „Fertig“/„<“, zurück in FamOrga → „🧪 Test-Termin senden“.",
+      "iOS fragt einmalig nach Kalenderzugriff → „Erlauben“. Danach steht morgen 10:00 „FamOrga Test“ in eurem gemeinsamen Kalender (anschließend dort löschen).",
+    ]},
   ];
+}
+
+// Beispieltermin für den Test (morgen 10–11 Uhr).
+export function testEvent() {
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { id: "test", title: "FamOrga Test", date: iso, time: "10:00", endTime: "11:00",
+    location: "", notes: "Test – kann gelöscht werden.", memberIds: [] };
 }

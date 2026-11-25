@@ -334,3 +334,6 @@ select.input { -webkit-appearance: none; appearance: none; }
 /* Nummerierte Schritt-Anleitung (z. B. Kurzbefehl-Einrichtung) */
 .steps { margin: 0 0 14px; padding-left: 22px; font-size: 14px; line-height: 1.45; }
 .steps li { margin-bottom: 8px; }
+.steps > li { margin-bottom: 12px; }
+.steps ul { margin: 4px 0 0; padding-left: 18px; }
+.steps ul li { margin-bottom: 4px; }
