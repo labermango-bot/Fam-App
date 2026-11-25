@@ -65,7 +65,7 @@ export function shortcutURL(name, events, memberLookup) {
 // Jeder Schritt: Überschrift + einzelne Taps.
 export function shortcutSetupSteps(name) {
   const FELD = (feld, key) =>
-    `„${feld}“: Feld antippen → über der Tastatur „Wiederholungsobjekt“ wählen → die blaue Blase „Wiederholungsobjekt“ nochmals antippen → Typ „Wörterbuch“ → bei „Schlüssel“ ${key} eintippen → „Fertig“.`;
+    `„${feld}“: Feld GEDRÜCKT halten → „Variable auswählen“ → oben in „Mit jedem Objekt … wiederholen“ die Blase „Wiederholungsobjekt“ antippen → die eingefügte Blase nochmals antippen → Typ „Wörterbuch“ → bei „Schlüssel“ ${key} eintippen → „Fertig“.`;
   return [
     { title: "Neuen Kurzbefehl anlegen", items: [
       "Kurzbefehle-App öffnen → unten rechts bzw. oben „+“.",
@@ -79,24 +79,24 @@ export function shortcutSetupSteps(name) {
     ]},
     { title: "Aktion 2: Wiederholen", items: [
       "Im Suchfeld „Mit jedem wiederholen“ suchen und antippen.",
-      "Es erscheint „Mit jedem Objekt in Wörterbuchwert wiederholen“ und darunter „Ende der Wiederholung“.",
+      "Es erscheint „Mit jedem Objekt aus Wörterbuchwert wiederholen“ und darunter „Wiederholung beenden“.",
     ]},
     { title: "Aktion 3: Ereignis anlegen", items: [
       "Im Suchfeld „Ereignis“ suchen → die rote Kalender-Aktion „Neues Ereignis hinzufügen“ (je nach iOS „Ereignis erstellen“) antippen.",
-      "Die Aktion landet ganz unten. Gedrückt halten und nach oben ziehen, sodass sie ZWISCHEN „Mit jedem … wiederholen“ und „Ende der Wiederholung“ steht (sie wird dann eingerückt).",
+      "Die Aktion landet ganz unten. Gedrückt halten und nach oben ziehen, sodass sie ZWISCHEN „Mit jedem … wiederholen“ und „Wiederholung beenden“ steht (sie wird dann eingerückt).",
       "In der Aktion auf den Kalender (z. B. „Kalender“) tippen → euren GEMEINSAMEN Kalender auswählen.",
     ]},
     { title: "Felder der Ereignis-Aktion verknüpfen (5×)", items: [
-      FELD("Ereignis/Titel", "titel"),
-      FELD("Startdatum", "start"),
-      FELD("Enddatum", "ende"),
-      "Auf den Pfeil „>“ bzw. „Mehr anzeigen“ der Aktion tippen, dann:",
+      FELD("Titel", "titel"),
+      FELD("von (z. B. „Morgen mittag“)", "start"),
+      FELD("bis (z. B. „Morgen um 13:00 Uhr“)", "ende"),
+      "Falls Ort/Notizen nicht sichtbar: auf den Pfeil ⌄ der Aktion tippen, dann:",
       FELD("Ort", "ort"),
       FELD("Notizen", "notizen"),
     ]},
     { title: "Optional", items: [
-      "Unter „Mehr anzeigen“ eine Benachrichtigung wählen (z. B. 1 Stunde vorher).",
-      "Wenn du jeden Termin vor dem Speichern sehen/bestätigen willst: dort den Schalter zum Anzeigen/Bearbeiten vor dem Hinzufügen einschalten.",
+      "Bei „Hinweis“ eine Erinnerung wählen (z. B. 1 Stunde vorher).",
+      "Wenn du jeden Termin vor dem Speichern sehen/bestätigen willst: „Bereich zum Erstellen anzeigen“ einschalten.",
     ]},
     { title: "Testen", items: [
       "Oben auf „Fertig“/„<“, zurück in FamOrga → „🧪 Test-Termin senden“.",
